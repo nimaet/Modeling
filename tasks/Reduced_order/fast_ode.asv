@@ -1,0 +1,38 @@
+function dx = fast_ode(t,x,N,S,omega2,damp,Gamma,Cp,...
+                       K_p,K_i,K_c,R_c,v_exc,j_exc)
+
+% unpack state
+eta     = x(1:N);
+eta_dot = x(N+1:2*N);
+v       = x(2*N+1 : 2*N+S);
+z       = x(2*N+S+1 : 2*N+2*S);
+% size(v)
+exc_mask
+
+%% ===================== Mechanical =====================
+% single matrix multiply
+eta_ddot = -damp(:).*eta_dot - omega2(:).*eta + Gamma * v;
+
+%% ===================== Voltage dynamics (vectorized) =====================
+strain_coupling = (Gamma.' * eta_dot).';      % 1×S
+
+duff = z.^3;
+
+num = (K_p/R_c).*v + (K_i/R_c).*z + strain_coupling + (K_c/R_c).*duff;
+
+v_dot = -num ./ Cp;
+
+%% ===================== Integrator =====================
+z_dot = v;
+
+%% ===================== Overwrite exc patch =====================
+% if any(exc_mask)
+    v_exc_val = v_exc(t);
+    v_dot(j_exc) = 0;
+    v(j_exc)     = v_exc_val;
+    z_dot(j_exc) = v_exc_val;
+% end
+
+%% ===================== Pack =====================
+dx = [eta_dot; eta_ddot; v_dot; z_dot];
+end
