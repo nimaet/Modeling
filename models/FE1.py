@@ -6,7 +6,7 @@ sys.path.append(str(project_root))
 from scipy.linalg import eigh
 from Modeling.models.beam_properties import PiezoBeamParams
 from dataclasses import dataclass
-from newmark import newmark_beta_nonlinear
+from Modeling.models.newmark import newmark_beta_nonlinear
 import matplotlib.pyplot as plt
 
 @dataclass(frozen=True)
@@ -319,6 +319,7 @@ class PiezoBeamFE:
 		K_i=0.0,
 		K_c=0.0,
 	):
+		
 		"""
 		Build and return a thread-safe ODE system object.
 		Does NOT modify FE state.
@@ -339,6 +340,11 @@ class PiezoBeamFE:
 		# ----------------------------
 		# Excitation (closure-safe)
 		# ----------------------------
+		if np.isscalar(K_i):
+				K_i = K_i * np.ones(len(idx_f))
+		else:
+			K_i = np.delete(K_i, j_exc)
+
 		def v_exc(t):
 			return A_exc*np.sin(
 				2*np.pi*(f0 + t*(f1-f0)/t_end)*t
@@ -386,7 +392,7 @@ class PiezoBeamFE:
 		def K_tan(x):
 			qf = x[N:]
 
-			Kqq = (K_i/R_c)*np.eye(len(qf)) \
+			Kqq = (np.diag(K_i)/R_c) *np.eye(len(qf)) \
 				+ (3*K_c/R_c)*np.diag(qf**2)
 
 			return np.block([
