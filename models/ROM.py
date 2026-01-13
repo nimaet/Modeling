@@ -369,8 +369,102 @@ class ROM:
 			'X': X,
 			'FRF': FRF
 		}
+	def homogenized_parameters(self, K_i, K_c, R_c):
+		"""
+		Compute homogenized parameters entering Eq. (13) of the paper,
+		consistent with the ROM realization.
+
+		Parameters
+		----------
+		K_i : float or array
+			Integral gain(s) of shunt (1/L equivalent)
+		K_c : float
+			Cubic gain of shunt (1/L_c equivalent)
+		R_c : float
+			Shunt resistance
+
+		Returns
+		-------
+		params : dict
+			Homogenized parameters:
+			m_bar, EI_bar, Cp_bar, L_bar, Lc_bar, theta_bar
+		"""
+
+		# effective Ki (homogenized in space)
+		if np.ndim(K_i) > 0:
+			K_i_eff = np.mean(K_i)
+		else:
+			K_i_eff = K_i
+
+		# ---- mechanical ----
+		m_bar  = self.p.m
+		EI_bar = self.p.YI
+
+		# ---- electrical ----
+		Cp_bar = self.p.Cp_scalar
+
+		# inductances (from ROM realization)
+		L_bar  = R_c / K_i_eff
+		Lc_bar = R_c / K_c
+
+		# ---- electromechanical coupling ----
+		# NOTE:
+		# theta_mech corresponds to the *local* coupling θ in Eq. (4)
+		# ROM + Γ implicitly perform the spatial averaging, so we take:
+		theta_bar = self.p.theta_mech
+
+		return {
+			'm_bar': m_bar,
+			'EI_bar': EI_bar,
+			'Cp_bar': Cp_bar,
+			'L_bar': L_bar,
+			'Lc_bar': Lc_bar,
+			'theta_bar': theta_bar
+		}
+
+	def nondimensional_scales(self, K_i, K_c, R_c):
+		"""
+		Compute nondimensional scales (Eq. 15–16) required for
+		the perturbation solution (Eq. 51–52).
+
+		Returns
+		-------
+		scales : dict
+			t0, x0, lambda0, w0, theta_tilde
+		"""
+
+		h = self.homogenized_parameters(K_i, K_c, R_c)
+
+		m_bar     = h['m_bar']
+		EI_bar    = h['EI_bar']
+		Cp_bar    = h['Cp_bar']
+		L_bar     = h['L_bar']
+		Lc_bar    = h['Lc_bar']
+		theta_bar = h['theta_bar']
+
+		# ---- Eq. (16) ----
+		t0 = np.sqrt(Cp_bar * L_bar)
+
+		x0 = (EI_bar * Cp_bar * L_bar / m_bar)**0.25
+
+		lambda0 = np.sqrt(abs(Lc_bar / L_bar))
+
+		w0 = np.sqrt(Cp_bar * abs(Lc_bar) / (m_bar * L_bar))
+
+		# ---- Eq. (15) ----
+		theta_tilde = theta_bar / np.sqrt(Cp_bar * EI_bar)
+
+		return {
+			't0': t0,
+			'x0': x0,
+			'lambda0': lambda0,
+			'w0': w0,
+			'theta_tilde': theta_tilde
+		}
+
 	
 if __name__ == "__main__":
+	# Example usage and testing of the ROM class
 	import matplotlib.pyplot as plt
 	Q = 300
 	params = PiezoBeamParams( 
@@ -379,6 +473,9 @@ if __name__ == "__main__":
 	rom = ROM(params, N=40)
 
 
+	#########################
+	# Time-domain simulation
+	#########################
 	# A_exc = 50
 	# f0 = 1e3
 	# f1 = 5e3
@@ -395,7 +492,6 @@ if __name__ == "__main__":
 	# K_i=0,
 	# t_end=0.1
 	# )
-
 	# t = out['t']
 	# vel = out['veloc']
 	# import matplotlib.pyplot as plt
@@ -405,26 +501,30 @@ if __name__ == "__main__":
 	# plt.ylabel("Velocity at mid-span [m/s]")
 	# plt.grid(True)
 	# plt.show()
-	ki1 = 1000 + 1000 * (np.arange(rom.S//2) % 2)
-	ki2 = 2000 - 1000 * (np.arange(rom.S//2) % 2)
-	x_eval = np.linspace(0, rom.p.L_b, 1000)
-	K_i = np.concatenate([ki1, ki2])
-	result = rom.dispersion_analysis(
-    j_exc=299, R_c=1e3, K_c=0, K_p=0.0001, K_i=K_i/1000,
-	w=np.linspace(25, 100, 100)*2*np.pi, x_eval=x_eval
-	)
-	wavenumber = result['wavenumber']
-	freq = result['freq']
-	spectrum = result['spectrum']
-	velocity_field = result['veloc'] # shape (npts, nfreq)
-	plt.figure(figsize=(8,6))
-	plt.pcolormesh( wavenumber, freq, np.abs(spectrum), shading='auto')
 
-	plt.ylabel('Frequency [Hz]')
-	plt.xlabel('Wavenumber [rad/m]')
-	plt.xlim([-50, 50])
-	plt.colorbar(label='|Velocity| spectrum')
-	plt.figure(figsize=(8,6))
-	plt.plot(x_eval, velocity_field[:, 0], label=f'Frequency = {freq[0]:.1f} Hz')
-	plt.plot(x_eval, velocity_field[:, 30], label=f'Frequency = {freq[30]:.1f} Hz')
-	plt.legend()
+	####################
+	# Dispersion analysis
+	######################
+	# ki1 = 1000 + 1000 * (np.arange(rom.S//2) % 2)
+	# ki2 = 2000 - 1000 * (np.arange(rom.S//2) % 2)
+	# x_eval = np.linspace(0, rom.p.L_b, 1000)
+	# K_i = np.concatenate([ki1, ki2])
+	# result = rom.dispersion_analysis(
+	# j_exc=299, R_c=1e3, K_c=0, K_p=0.0001, K_i=K_i/1000,
+	# w=np.linspace(25, 100, 100)*2*np.pi, x_eval=x_eval
+	# )
+	# wavenumber = result['wavenumber']
+	# freq = result['freq']
+	# spectrum = result['spectrum']
+	# velocity_field = result['veloc'] # shape (npts, nfreq)
+	# plt.figure(figsize=(8,6))
+	# plt.pcolormesh( wavenumber, freq, np.abs(spectrum), shading='auto')
+
+	# plt.ylabel('Frequency [Hz]')
+	# plt.xlabel('Wavenumber [rad/m]')
+	# plt.xlim([-50, 50])
+	# plt.colorbar(label='|Velocity| spectrum')
+	# plt.figure(figsize=(8,6))
+	# plt.plot(x_eval, velocity_field[:, 0], label=f'Frequency = {freq[0]:.1f} Hz')
+	# plt.plot(x_eval, velocity_field[:, 30], label=f'Frequency = {freq[30]:.1f} Hz')
+	# plt.legend()
