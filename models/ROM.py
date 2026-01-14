@@ -399,13 +399,14 @@ class ROM:
 		# ---- mechanical ----
 		m_bar  = self.p.m
 		EI_bar = self.p.YI
-
+		theta1 = self.p.theta_mech/self.p.YI
+		theta2 = 0
 		# ---- electrical ----
-		Cp_bar = self.p.Cp_scalar
+		Cp_bar = self.p.Cp_scalar/self.p.w_p
 
 		# inductances (from ROM realization)
-		L_bar  = R_c / K_i_eff
-		Lc_bar = R_c / K_c
+		L_bar  = R_c / K_i_eff*self.p.w_p
+		Lc_bar = R_c / K_c*self.p.w_p
 
 		# ---- electromechanical coupling ----
 		# NOTE:

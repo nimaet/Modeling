@@ -37,6 +37,7 @@ class PiezoBeamParams:
 	eps33: float = field(init=False)
 	m: float = field(init=False)
 	YI: float = field(init=False)
+	YI_s: float = field(init=False)
 	Cp_scalar: float = field(init=False)
 	Cp: np.ndarray = field(init=False)
 	theta_mech: float = field(init=False)
@@ -76,7 +77,7 @@ class PiezoBeamParams:
 		term1 = self.E_s * self.hs**3 / 8.0
 		term2 = self.E_p * ((self.hp + self.hs/2.0)**3 - self.hs**3/8.0)
 		self.YI = 2.0*self.b/3.0 * (term1 + term2)
-
+		self.YI_s = self.b* self.E_s * self.hs**3 / 12
 		# capacitance
 		self.Cp_scalar = 2.0*self.eps33 * self.w_p * self.b / self.hp
 		self.Cp = self.Cp_scalar * np.ones(self.S)
