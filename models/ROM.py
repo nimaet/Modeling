@@ -3,6 +3,9 @@ from scipy.optimize import fsolve
 from scipy.integrate import solve_ivp
 import sys
 from pathlib import Path
+
+from Modeling.models.jit_stuff import odefun_jit, rk4_integrate
+# from Modeling.tasks.Reduced_order.linear_Kp_sweep import v_exc
 # add Modeling/ to Python path
 project_root = Path.cwd().parents[0]
 sys.path.append(str(project_root))
@@ -369,6 +372,82 @@ class ROM:
 			'X': X,
 			'FRF': FRF
 		}
+	
+
+	def run_time_sim_jit(
+		self,
+		v_exc,
+		j_exc=30,
+		R_c=1e3,
+		K_c=0,
+		K_p=0,
+		K_i=0,
+		t_end=0.1,
+		t_eval=None,
+		x_eval=None
+	):
+		if x_eval is None:
+			x_eval = np.linspace(0, self.p.L_b, 100)
+
+		if t_eval is None:
+			raise ValueError("t_eval must be provided for fixed-step RK4")
+
+		N = self.N
+		S = self.S
+		dim = 2*N + 2*S
+
+		x0 = np.zeros(dim)
+
+		t_arr = np.asarray(t_eval, dtype=np.float64)
+		v_exc_arr = np.asarray(v_exc(t_arr), dtype=np.float64)
+
+		# ---- homogenize Ki for JIT ----
+		if np.ndim(K_i) > 0:
+			K_i_eff = float(np.mean(K_i))
+		else:
+			K_i_eff = float(K_i)
+
+		# ---- allocate state OUTSIDE JIT ----
+		dim = 2*N + 2*S
+		Nt = t_arr.size
+		state = np.zeros((dim, Nt), dtype=np.float64)
+		state[:, 0] = x0
+
+		rk4_integrate(
+			state,
+			t_arr,
+			v_exc_arr,
+			N,
+			S,
+			self.damp,
+			self.omega2,
+			self.Gamma,
+			self.p.theta_mech,
+			self.p.Cp_scalar,
+			float(R_c),
+			float(K_c),
+			float(K_p),
+			float(K_i_eff),
+			int(j_exc)
+		)
+
+
+
+		# ---- reconstruct velocity field ----
+		eta_dot = state[N:2*N, :]
+		veloc = np.zeros((len(x_eval), eta_dot.shape[1]))
+
+		for r in range(N):
+			veloc += np.outer(self.mode_shape(r, x_eval), eta_dot[r, :])
+
+		return {
+			't': t_eval,
+			'state': state,
+			'veloc': veloc,
+			'x_eval': x_eval
+		}
+
+
 	def homogenized_parameters(self, K_i, K_c, R_c):
 		"""
 		Compute homogenized parameters entering Eq. (13) of the paper,
@@ -405,8 +484,8 @@ class ROM:
 		Cp_bar = self.p.Cp_scalar/self.p.w_p
 
 		# inductances (from ROM realization)
-		L_bar  = R_c / K_i_eff*self.p.w_p
-		Lc_bar = R_c / K_c*self.p.w_p
+		L_bar  = R_c / K_i_eff * self.p.w_p
+		Lc_bar = R_c / K_c * self.p.w_p
 
 		# ---- electromechanical coupling ----
 		# NOTE:
@@ -464,68 +543,3 @@ class ROM:
 		}
 
 	
-if __name__ == "__main__":
-	# Example usage and testing of the ROM class
-	import matplotlib.pyplot as plt
-	Q = 300
-	params = PiezoBeamParams( 
-		Q = Q, L_b=3.185
-		)
-	rom = ROM(params, N=40)
-
-
-	#########################
-	# Time-domain simulation
-	#########################
-	# A_exc = 50
-	# f0 = 1e3
-	# f1 = 5e3
-	# t_end = 0.1
-	# def v_exc(t, A_exc=A_exc, f0=f0, f1=f1, t_end=t_end):
-	# 	return A_exc*np.sin(2*np.pi*(f0+ t*(f1-f0)/t_end) *t)
-	# t_eval = np.arange(0, t_end, 1/f1/20)
-	# out = rom.run_time_sim(t_eval=t_eval,
-	# v_exc=v_exc,
-	# j_exc=30,
-	# R_c=1e3,
-	# K_c=0,
-	# K_p=0.01,
-	# K_i=0,
-	# t_end=0.1
-	# )
-	# t = out['t']
-	# vel = out['veloc']
-	# import matplotlib.pyplot as plt
-	# plt.figure(figsize=(7,4))
-	# plt.plot(t, vel[50,:])
-	# plt.xlabel("Time [s]")
-	# plt.ylabel("Velocity at mid-span [m/s]")
-	# plt.grid(True)
-	# plt.show()
-
-	####################
-	# Dispersion analysis
-	######################
-	# ki1 = 1000 + 1000 * (np.arange(rom.S//2) % 2)
-	# ki2 = 2000 - 1000 * (np.arange(rom.S//2) % 2)
-	# x_eval = np.linspace(0, rom.p.L_b, 1000)
-	# K_i = np.concatenate([ki1, ki2])
-	# result = rom.dispersion_analysis(
-	# j_exc=299, R_c=1e3, K_c=0, K_p=0.0001, K_i=K_i/1000,
-	# w=np.linspace(25, 100, 100)*2*np.pi, x_eval=x_eval
-	# )
-	# wavenumber = result['wavenumber']
-	# freq = result['freq']
-	# spectrum = result['spectrum']
-	# velocity_field = result['veloc'] # shape (npts, nfreq)
-	# plt.figure(figsize=(8,6))
-	# plt.pcolormesh( wavenumber, freq, np.abs(spectrum), shading='auto')
-
-	# plt.ylabel('Frequency [Hz]')
-	# plt.xlabel('Wavenumber [rad/m]')
-	# plt.xlim([-50, 50])
-	# plt.colorbar(label='|Velocity| spectrum')
-	# plt.figure(figsize=(8,6))
-	# plt.plot(x_eval, velocity_field[:, 0], label=f'Frequency = {freq[0]:.1f} Hz')
-	# plt.plot(x_eval, velocity_field[:, 30], label=f'Frequency = {freq[30]:.1f} Hz')
-	# plt.legend()
