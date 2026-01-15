@@ -45,7 +45,6 @@ def solve_newmark(
 
 	n_steps = int(t_end / dt)
 
-	from newmark import newmark_beta_nonlinear
 
 	x, x_dot, x_ddot = newmark_beta_nonlinear(
 		M=ode.M,
