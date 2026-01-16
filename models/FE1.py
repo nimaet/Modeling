@@ -6,6 +6,7 @@ sys.path.append(str(project_root))
 from scipy.linalg import eigh
 from Modeling.models.beam_properties import PiezoBeamParams
 from dataclasses import dataclass
+# from Modeling.models.utils import compute_frf_from_time_domain
 from Modeling.models.newmark import newmark_beta_nonlinear
 import matplotlib.pyplot as plt
 
@@ -17,6 +18,7 @@ class PiezoBeamODESystem:
 	f_int: callable
 	K_tan: callable
 	f_ext: callable
+	v_exc: callable
 	N_mech: int
 	N_elec: int
 
@@ -111,7 +113,8 @@ def solve_newmark(
 	newton_tol=1e-9,
 	newton_maxiter=5,
 	x0=None,
-	x_dot0=None
+	x_dot0=None,
+	do_spectral=True,
 ):
 	ndof = ode.M.shape[0]
 
@@ -146,7 +149,52 @@ def solve_newmark(
 	)
 
 	t = np.linspace(0.0, n_steps*dt, n_steps+1)
-	return t, x, x_dot, x_ddot
+
+	# Extract mechanical and electrical DOFs
+	N_mech = ode.N_mech
+	N_elec = ode.N_elec
+	
+	u = x[:, :N_mech:2]              # mechanical displacement (n_steps+1, N_mech)
+	u_dot = x_dot[:, :N_mech:2]      # mechanical velocity (n_steps+1, N_mech)
+	u_ddot = x_ddot[:, :N_mech:2]    # mechanical acceleration (n_steps+1, N_mech)
+	q = x[:, N_mech:]              # electrical charge (n_steps+1, N_elec)
+	v = x_dot[:, N_mech:]          # voltage/dq dt (n_steps+1, N_elec)
+
+	result = {
+		't': t,
+		'u': u,                    # mechanical displacement
+		'u_dot': u_dot,            # mechanical velocity
+		'u_ddot': u_ddot,          # mechanical acceleration
+		'q': q,                    # electrical charge
+		'v': v,                    # voltage (dq/dt)
+		# Keep full state for backwards compatibility if needed
+		'x': x,
+		'x_dot': x_dot,
+		'x_ddot': x_ddot
+	}
+
+	if do_spectral:
+		# Harmonize excitation length with solver time vecto
+		v_exc_values = ode.v_exc(t)
+		assert len(v_exc_values) == u_ddot.shape[0], "Excitation length mismatch with time vector"
+		# if v_exc_values.shape[0] == t.shape[0] - 1:
+		# 	# Common case when using np.arange for excitation sampling
+		# 	v_exc_values = np.append(v_exc_values, v_exc_values[-1])
+		# elif v_exc_values.shape[0] != t.shape[0]:
+		# 	t_exc = np.linspace(t[0], t[-1], v_exc_values.shape[0])
+		# 	v_exc_values = np.interp(t, t_exc, v_exc_values)
+
+		spec = compute_frf_from_time_domain(
+			t=t,
+			veloc=u_dot,
+			v_exc_values=v_exc_values
+		)
+		result['spectral'] = spec
+	else:
+		result['spectral'] = None
+
+	return result
+
 
 def frequency_response_linear(ode,	omega ):
 	"""
@@ -166,14 +214,59 @@ def frequency_response_linear(ode,	omega ):
 
 	return x_hat
 
-def frf_sweep(ode,	omega_vec):
+def frf_sweep(ode, omega_vec):
+	"""
+	Compute frequency response sweep over a range of frequencies.
+	
+	Parameters
+	----------
+	ode : PiezoBeamODESystem
+		ODE system object with M, C, K_tan, etc.
+	omega_vec : array_like
+		Array of angular frequencies [rad/s]
+	
+	Returns
+	-------
+	result : dict
+		Dictionary containing:
+		- 'omega': angular frequency array [rad/s]
+		- 'freq': frequency array [Hz]
+		- 'u': mechanical displacement response (n_freq, N_mech), complex
+		- 'u_dot': mechanical velocity response (n_freq, N_mech), complex
+		- 'q': electrical charge response (n_freq, N_elec), complex
+		- 'v': voltage response (n_freq, N_elec), complex
+		- 'X': full state vector (n_freq, ndof), complex (for backwards compatibility)
+	"""
 	ndof = ode.M.shape[0]
+	N_mech = ode.N_mech
+	N_elec = ode.N_elec
+	
 	X = np.zeros((len(omega_vec), ndof), dtype=complex)
 
 	for k, w in enumerate(omega_vec):
 		X[k] = frequency_response_linear(ode, w)
 
-	return X
+	# Separate mechanical and electrical DOFs
+	u = X[:, :N_mech:2]                    # mechanical displacement
+	q = X[:, N_mech:]                    # electrical charge
+	
+	# Velocity and voltage (derivatives in frequency domain)
+	u_dot = np.zeros_like(u)
+	v = np.zeros_like(q)
+	
+	for k, w in enumerate(omega_vec):
+		u_dot[k] = 1j * w * u[k]         # velocity = iω * displacement
+		v[k] = 1j * w * q[k]             # voltage = iω * charge
+
+	return {
+		'omega': omega_vec,
+		'freq': omega_vec / (2*np.pi),
+		'u': u,
+		'u_dot': u_dot,
+		'q': q,
+		'v': v,
+		'X': X  # full state for backwards compatibility
+	}
 
 
 class PiezoBeamFE:
@@ -391,15 +484,13 @@ class PiezoBeamFE:
 	def build_ode_system(
 		self,
 		j_exc=30,
-		A_exc=50.0,
-		f0=1e3,
-		f1=2e3,
-		t_end=0.2,
 		R_c=1e3,
 		K_p=0.02,
 		K_i=0.0,
 		K_c=0.0,
+		v_exc = lambda t: 0.0
 	):
+
 		
 		"""
 		Build and return a thread-safe ODE system object.
@@ -426,10 +517,6 @@ class PiezoBeamFE:
 		else:
 			K_i = np.delete(K_i, j_exc)
 
-		def v_exc(t):
-			return A_exc*np.sin(
-				2*np.pi*(f0 + t*(f1-f0)/t_end)*t
-			)
 
 		# ----------------------------
 		# Damping
@@ -497,6 +584,7 @@ class PiezoBeamFE:
 			f_int=f_int,
 			K_tan=K_tan,
 			f_ext=f_ext,
+			v_exc=v_exc,
 			f_ext_unit=f_ext_unit,
 			N_mech=N,
 			N_elec=len(idx_f)

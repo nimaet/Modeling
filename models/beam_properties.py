@@ -89,6 +89,15 @@ class PiezoBeamParams:
 
 
 	def _update_c_alpha_beta(self):
+		"""
+		Compute Rayleigh damping coefficients from two calibration points.
+		
+		Rayleigh damping: C = c_alpha * M + c_beta * K
+		- c_alpha: mass-proportional coefficient (dominates at low frequencies)
+		- c_beta: stiffness-proportional coefficient (dominates at high frequencies)
+		
+		Modal damping ratio: ζ(ω) = c_alpha/(2ω) + c_beta*ω/2
+		"""
 		A = np.array([
 			[self.omega_p/(2*self.YI), 1/(2*self.m*self.omega_p)],
 			[self.omega_q/(2*self.YI), 1/(2*self.m*self.omega_q)]
@@ -114,3 +123,57 @@ class PiezoBeamParams:
 	def zeta_q(self, value):
 		self._zeta_q = value
 		self._update_c_alpha_beta()
+
+	def plot_zeta_vs_omega(self, omega_range=None, ax=None):
+		"""
+		Plot damping ratio (zeta) vs angular frequency (omega) using the two calibration points.
+		
+		The damping ratio is calculated using the Rayleigh damping model:
+		zeta(omega) = c_alpha / (2*omega) + c_beta * omega / 2
+		
+		Parameters:
+		-----------
+		omega_range : array-like, optional
+			Range of angular frequencies to plot [rad/s]. 
+			If None, uses a range from 0.5*omega_p to 2*omega_q
+		ax : matplotlib axes, optional
+			Axes object to plot on. If None, creates a new figure
+			
+		Returns:
+		--------
+		fig, ax : matplotlib figure and axes objects
+		"""
+		import matplotlib.pyplot as plt
+		
+		# Create figure if not provided
+		if ax is None:
+			fig, ax = plt.subplots(figsize=(8, 6))
+		else:
+			fig = ax.get_figure()
+		
+		# Define omega range
+		if omega_range is None:
+			omega_range = np.linspace(0.5*self.omega_p, 2*self.omega_q, 500)
+		
+		# Calculate zeta using Rayleigh damping model
+		zeta = self.c_alpha / (2*omega_range * self.m) + self.c_beta * omega_range / (2*self.YI)
+		
+		# Plot the curve
+		ax.plot(omega_range/(2*np.pi), zeta*100, 'b-', linewidth=2, label='Rayleigh damping')
+		
+		# Mark the calibration points
+		ax.plot(self.omega_p/(2*np.pi), self._zeta_p*100, 'ro', markersize=10, 
+				label=f'Point 1: ({self.omega_p/(2*np.pi):.1f} Hz, {self._zeta_p*100:.2f}%)')
+		ax.plot(self.omega_q/(2*np.pi), self._zeta_q*100, 'rs', markersize=10,
+				label=f'Point 2: ({self.omega_q/(2*np.pi):.1f} Hz, {self._zeta_q*100:.2f}%)')
+		
+		# Formatting
+		ax.set_xlabel('Frequency [Hz]', fontsize=12)
+		ax.set_ylabel('Damping Ratio ζ [%]', fontsize=12)
+		ax.set_title('Damping Ratio vs Frequency', fontsize=14, fontweight='bold')
+		ax.grid(True, alpha=0.3)
+		ax.legend(loc='best', fontsize=10)
+		
+		plt.tight_layout()
+		
+		return fig, ax

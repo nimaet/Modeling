@@ -542,4 +542,3 @@ class ROM:
 			'theta_tilde': theta_tilde
 		}
 
-	

@@ -80,3 +80,4 @@ def animate_field_1d(
 
 	plt.show()
 	return ani
+
