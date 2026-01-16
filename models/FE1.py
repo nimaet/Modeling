@@ -20,6 +20,88 @@ class PiezoBeamODESystem:
 	N_mech: int
 	N_elec: int
 
+
+def compute_frf_from_time_domain(t, veloc, v_exc_values):
+	"""
+	Compute Frequency Response Function (FRF) from time domain response.
+	
+	Performs FFT on velocity field and excitation signal, then computes
+	the spatially-averaged transfer function.
+	
+	Parameters
+	----------
+	t : array_like
+		Time vector [s]
+	veloc : ndarray
+		Velocity field array of shape (n_time, n_spatial) where:
+		- n_spatial: number of spatial points
+		- n_time: number of time samples
+	v_exc_values : array_like
+		Excitation voltage/velocity values at each time point,
+		shape (n_time,)
+	
+	Returns
+	-------
+	result : dict
+		Dictionary containing:
+		- 'freq': frequency array [Hz]
+		- 'FRF': frequency response function (spatially averaged magnitude)
+		- 'Y': FFT of velocity field, shape (n_freq, n_spatial)
+		- 'X': FFT of excitation signal, shape (n_freq,)
+	
+	Notes
+	-----
+	- Only positive frequencies are returned
+	- FRF is computed as: mean(|Y|) / |X| over spatial dimension
+	- If time vector has < 2 samples, returns None values
+	"""
+	t = np.asarray(t)
+	veloc = np.asarray(veloc)
+	v_exc_values = np.asarray(v_exc_values)
+	
+	Nt = len(t)
+	
+	if Nt < 2:
+		return {
+			'freq': None,
+			'FRF': None,
+			'Y': None,
+			'X': None
+		}
+	
+	dt = t[1] - t[0]
+	
+	# FFT of velocity field (spatial x temporal)
+	Y = np.fft.fft(veloc, axis=0)
+	
+	# FFT of excitation signal
+	X = np.fft.fft(v_exc_values)
+	
+	# Frequency vector [Hz]
+	freq = np.fft.fftfreq(Nt, d=dt)
+	
+	# Keep only positive frequencies
+	print("X shape:", X.shape, "Y shape:", Y.shape, "freq shape:", freq.shape, "veloc shape:", veloc.shape)
+	idx = freq >= 0
+	freq = freq[idx]
+	Y = Y[idx, :]
+	X = X[idx]
+	
+	# FRF: spatially averaged magnitude of transfer function
+	# Avoid division by zero
+	X_mag = np.abs(X)
+	X_mag = np.where(X_mag < 1e-10, 1.0, X_mag)  # Replace near-zero with 1 to avoid division by zero
+	
+	FRF = np.mean(np.abs(Y), axis=1) / X_mag
+	
+	return {
+		'freq': freq,
+		'FRF': FRF,
+		'Y': Y,
+		'X': X
+	}
+
+
 def solve_newmark(
 	ode,
 	dt,
