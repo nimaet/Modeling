@@ -1,0 +1,65 @@
+{
+  "timestamp": "2026-01-24T18:33:49.560940",
+  "total_simulations": 40,
+  "successful_simulations": 32,
+  "failed_simulations": 8,
+  "failed_cases": [
+    {
+      "amp": 37.142857142857146,
+      "gamma": 0.0,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 13051, residual = 1.7249531544248309"
+    },
+    {
+      "amp": 37.142857142857146,
+      "gamma": 0.8,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 37610, residual = 2.3141123359042965"
+    },
+    {
+      "amp": 43.57142857142857,
+      "gamma": 0.0,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 12549, residual = 1.0931308362184933"
+    },
+    {
+      "amp": 43.57142857142857,
+      "gamma": 0.2,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 22762, residual = 0.8253929988538172"
+    },
+    {
+      "amp": 43.57142857142857,
+      "gamma": 0.8,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 36877, residual = 794.4763385118704"
+    },
+    {
+      "amp": 50.0,
+      "gamma": 0.0,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 12141, residual = 0.5804597490403608"
+    },
+    {
+      "amp": 50.0,
+      "gamma": 0.2,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 13446, residual = 0.7574212767511372"
+    },
+    {
+      "amp": 50.0,
+      "gamma": 0.8,
+      "exception": "RuntimeError",
+      "message": "Newton did not converge at step 36379, residual = 1.510377530838113"
+    }
+  ],
+  "sweep_parameters": {
+    "K_p": 0.03,
+    "ki_nom": 1800.0,
+    "K_c_abs0": 60000000000.0,
+    "f0": 1000,
+    "f1": 3000,
+    "dt": 6.666666666666667e-06,
+    "t_end": 1.0
+  }
+}

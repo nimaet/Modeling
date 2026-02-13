@@ -8,6 +8,7 @@ from Modeling.models.beam_properties import PiezoBeamParams
 from dataclasses import dataclass
 # from Modeling.models.utils import compute_frf_from_time_domain
 from Modeling.models.newmark import newmark_beta_nonlinear
+from tqdm import tqdm
 import matplotlib.pyplot as plt
 
 @dataclass(frozen=True)
@@ -243,7 +244,7 @@ def frf_sweep(ode, omega_vec):
 	
 	X = np.zeros((len(omega_vec), ndof), dtype=complex)
 
-	for k, w in enumerate(omega_vec):
+	for k, w in enumerate(tqdm(omega_vec, desc="FRF sweep")):
 		X[k] = frequency_response_linear(ode, w)
 
 	# Separate mechanical and electrical DOFs

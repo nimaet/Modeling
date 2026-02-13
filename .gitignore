@@ -30,3 +30,9 @@ venv/
 *.npy
 *.npz
 *.mat
+*.png
+*.pkl
+*.csv
+*.gif
+*.mp4
+

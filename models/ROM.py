@@ -4,7 +4,7 @@ from scipy.integrate import solve_ivp
 import sys
 from pathlib import Path
 
-from Modeling.models.jit_stuff import odefun_jit, rk4_integrate
+# from Modeling.models.jit_stuff import odefun_jit, rk4_integrate
 # from Modeling.tasks.Reduced_order.linear_Kp_sweep import v_exc
 # add Modeling/ to Python path
 project_root = Path.cwd().parents[0]
@@ -535,10 +535,10 @@ class ROM:
 		theta_tilde = theta_bar / np.sqrt(Cp_bar * EI_bar)
 
 		return {
-			't0': t0,
-			'x0': x0,
-			'lambda0': lambda0,
-			'w0': w0,
-			'theta_tilde': theta_tilde
+			't0': float(t0),
+			'x0': float(x0),
+			'lambda0': float(lambda0),
+			'w0': float(w0),
+			'theta_tilde': float(theta_tilde)
 		}
 
