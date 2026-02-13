@@ -288,38 +288,39 @@ class PiezoBeamFE:
 	def _build_mesh(self):
 
 		p = self.params
-		xL, xR, L_b, n_patches = p.xL, p.xR, p.L_b, p.n_patches
+		xL, xR, L_b, S = p.xL, p.xR, p.L_b, p.S
+
 		segments = []
 
 		if xL[0] > 0:
 			segments.append(("gap", 0.0, xL[0]))
 
-		for j in range(n_patches):
+		for j in range(S):
 			segments.append(("patch", xL[j], xR[j]))
-			if j < n_patches-1 and xR[j] < xL[j+1]:
-					segments.append(("gap", xR[j], xL[j+1]))
+			if j < S-1 and xR[j] < xL[j+1]:
+				segments.append(("gap", xR[j], xL[j+1]))
 
-			if xR[-1] < L_b:
-				segments.append(("gap", xR[-1], L_b))
+		if xR[-1] < L_b:
+			segments.append(("gap", xR[-1], L_b))
 
-			x_nodes = [0.0]
-			for seg_type, xa, xb in segments:
-				n = self.n_el_patch if seg_type == "patch" else self.n_el_gap
-				xs = np.linspace(xa, xb, n+1)
-				x_nodes.extend(xs[1:])
+		x_nodes = [0.0]
+		for seg_type, xa, xb in segments:
+			n = self.n_el_patch if seg_type == "patch" else self.n_el_gap
+			xs = np.linspace(xa, xb, n+1)
+			x_nodes.extend(xs[1:])
 
-			self.x_nodes = np.array(x_nodes)
-			self.Nnodes  = len(self.x_nodes)
+		self.x_nodes = np.array(x_nodes)
+		self.Nnodes  = len(self.x_nodes)
 
-			self.elements = [(i, i+1) for i in range(self.Nnodes-1)]
+		self.elements = [(i, i+1) for i in range(self.Nnodes-1)]
 
-			elem_type = []
-			for (i, j) in self.elements:
-				xm = 0.5*(self.x_nodes[i] + self.x_nodes[j])
-				in_patch = any((xm >= xL[k]) and (xm <= xR[k]) for k in range(n_patches))
-				elem_type.append("patch" if in_patch else "gap")
+		elem_type = []
+		for (i, j) in self.elements:
+			xm = 0.5*(self.x_nodes[i] + self.x_nodes[j])
+			in_patch = any((xm >= xL[k]) and (xm <= xR[k]) for k in range(S))
+			elem_type.append("patch" if in_patch else "gap")
 
-			self.elem_type = elem_type
+		self.elem_type = elem_type
 
 	# --------------------------------------------------
 	# Element properties
@@ -391,12 +392,12 @@ class PiezoBeamFE:
 	def _build_Gamma(self):
 
 		p = self.params
-		n_patches = p.n_patches
+		S = p.S
 
-		Gamma = np.zeros((self.Ndof, n_patches))
+		Gamma = np.zeros((self.Ndof, S))
 		node_index = {x: i for i, x in enumerate(self.x_nodes)}
 
-		for j in range(n_patches):
+		for j in range(S):
 			kL = node_index[p.xL[j]]
 			kR = node_index[p.xR[j]]
 
