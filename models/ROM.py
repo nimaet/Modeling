@@ -15,7 +15,7 @@ class ROM:
 	def __init__(self, params=PiezoBeamParams(), N=30):
 		self.p = params
 		self.N = N
-		self.S = params.S
+		self.n_patches = params.n_patches
 
 		self._compute_eigen()
 		self._compute_modes()
@@ -87,9 +87,9 @@ class ROM:
 		return np.sqrt(1.0/(self.p.m*self.p.L_b)) * phi_x
 
 	def _compute_coupling(self):
-		self.Gamma = np.zeros((self.N, self.S))
+		self.Gamma = np.zeros((self.N, self.n_patches))
 		for r in range(self.N):
-			for j in range(self.S):
+			for j in range(self.n_patches):
 				self.Gamma[r, j] = (
 					self.mode_shape_dx(r, self.p.xR[j])
 					- self.mode_shape_dx(r, self.p.xL[j])
@@ -107,7 +107,7 @@ class ROM:
 	# ===================== ODE =====================
 	def odefun(self, t, x, v_exc, j_exc, R_c, K_c=0, K_p=0, K_i=0):
 		N = self.N
-		S = self.S
+		S = self.n_patches
 
 		eta = x[0:N]
 		eta_dot = x[N:2*N]
@@ -142,7 +142,7 @@ class ROM:
 			w = np.arange(0.1, 4500, 2.5)*2*np.pi
 
 		N = self.N
-		S = self.S
+		S = self.n_patches
 		dim = 2*N + 2*S
 
 		A = np.zeros((dim, dim))
@@ -223,7 +223,7 @@ class ROM:
 			x_eval = np.linspace(0, self.p.L_b, 1000)
 		
 		N = self.N
-		S = self.S
+		S = self.n_patches
 		dim = 2*N + 2*S
 
 		# Build system matrix (same as frequency_response)
@@ -301,7 +301,7 @@ class ROM:
 			x_eval = np.linspace(0, self.p.L_b, 100)
 
 		N = self.N
-		S = self.S
+		S = self.n_patches
 
 		x0 = np.zeros(2*N + 2*S)
 
@@ -393,7 +393,7 @@ class ROM:
 			raise ValueError("t_eval must be provided for fixed-step RK4")
 
 		N = self.N
-		S = self.S
+		S = self.n_patches
 		dim = 2*N + 2*S
 
 		x0 = np.zeros(dim)

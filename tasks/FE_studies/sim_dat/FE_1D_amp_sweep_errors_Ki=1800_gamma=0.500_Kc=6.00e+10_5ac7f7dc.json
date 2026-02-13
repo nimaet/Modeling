@@ -1,0 +1,61 @@
+{
+  "total": 8,
+  "successful": 0,
+  "failed": 8,
+  "failed_cases": [
+    {
+      "status": "failed",
+      "A": 5.0,
+      "error": "Newton did not converge at step 6, residual = 2.42924002796898e-07",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 11.428571428571429,
+      "error": "Newton did not converge at step 5, residual = 2.7709411200539208e-08",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 17.857142857142858,
+      "error": "Newton did not converge at step 5, residual = 0.11095495324957473",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 24.285714285714285,
+      "error": "Newton did not converge at step 5, residual = 9.611017551366503e-05",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 30.714285714285715,
+      "error": "Newton did not converge at step 5, residual = 7.028509058680599",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 37.142857142857146,
+      "error": "Newton did not converge at step 5, residual = 0.782552518051253",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 43.57142857142857,
+      "error": "Newton did not converge at step 5, residual = 4.705179011857686",
+      "exception": "RuntimeError"
+    },
+    {
+      "status": "failed",
+      "A": 50.0,
+      "error": "Newton did not converge at step 5, residual = 6.837959805125739",
+      "exception": "RuntimeError"
+    }
+  ],
+  "tags": {
+    "Ki_nominal": 1800.0,
+    "gamma": 0.5,
+    "Kc_abs0": 60000000000.0,
+    "Kc_hash": "5ac7f7dc"
+  }
+}

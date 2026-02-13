@@ -7,7 +7,7 @@ class PiezoBeamParams:
 	# L_b: float = 0.3185			# beam length [m]
 	w_p: float = 10e-3			# patch width [m]
 	w_s: float = 0.265625e-3		# spacing between patches [m]
-	Q: int = 31				# number of unit cells (patches)
+	n_patches: int = 31			# number of piezoelectric patches
 	b: float = 10e-3			# beam width [m]
 	hp: float = 0.252e-3			# piezo thickness [m]
 	hs: float = 0.51e-3			# substrate thickness [m]
@@ -29,7 +29,6 @@ class PiezoBeamParams:
 
 	# ===================== Derived quantities =====================
 	L_b: float = field(init=False)
-	S: int = field(init=False)
 	E_p: float = field(init=False)
 	G_p: float = field(init=False)
 	G_s: float = field(init=False)
@@ -51,9 +50,6 @@ class PiezoBeamParams:
 
 
 	def __post_init__(self):
-		# number of patches
-		self.S = self.Q
-
 		# elastic moduli
 		self.E_p = 1.0 / self.s11
 		self.G_p = 1.0 / self.s44
@@ -67,7 +63,7 @@ class PiezoBeamParams:
 		self.eps33 = self.eps33_bar - self.d31**2 / self.s11
 
 		# patch locations
-		j = np.arange(1, self.S + 1)
+		j = np.arange(1, self.n_patches + 1)
 		self.xL = (j - 1)*self.w_p + j*self.w_s
 		self.xR = self.xL + self.w_p
 		self.L_b = self.xR[-1]+self.w_s
@@ -81,7 +77,7 @@ class PiezoBeamParams:
 		self.YI_s = self.b* self.E_s * self.hs**3 / 12
 		# capacitance
 		self.Cp_scalar = 2.0*self.eps33 * self.w_p * self.b / self.hp
-		self.Cp = self.Cp_scalar * np.ones(self.S)
+		self.Cp = self.Cp_scalar * np.ones(self.n_patches)
 
 		# electromechanical coupling
 		hpc = 0.5*(self.hp + self.hs)
