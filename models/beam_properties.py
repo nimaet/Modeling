@@ -7,7 +7,7 @@ class PiezoBeamParams:
 	# L_b: float = 0.3185			# beam length [m]
 	w_p: float = 10e-3			# patch width [m]
 	w_s: float = 0.265625e-3		# spacing between patches [m]
-	Q: int = 31				# number of unit cells (patches)
+	n_patches: int = 31				# number of unit cells (patches)
 	b: float = 10e-3			# beam width [m]
 	hp: float = 0.252e-3			# piezo thickness [m]
 	hs: float = 0.51e-3			# substrate thickness [m]
@@ -30,6 +30,7 @@ class PiezoBeamParams:
 	# ===================== Derived quantities =====================
 	L_b: float = field(init=False)
 	S: int = field(init=False)
+	Q: int = field(init=False)
 	E_p: float = field(init=False)
 	G_p: float = field(init=False)
 	G_s: float = field(init=False)
@@ -52,6 +53,7 @@ class PiezoBeamParams:
 
 	def __post_init__(self):
 		# number of patches
+		self.Q = self.n_patches
 		self.S = self.Q
 
 		# elastic moduli

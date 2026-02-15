@@ -264,3 +264,136 @@ def animate_field_1d_with_envelope(
 		print(f"Saved animation to {filename}")
 
 	return ani
+
+
+def quick_frf_check(
+	K_i: float = 0.0,
+	K_p: float = 1e-5,
+	K_c: float = 0.0,
+	R_c: float = 1e3,
+	f0: float = 800.0,
+	f1: float = 4500.0,
+	t_end: float = 0.1,
+	A_exc: float = 50.0,
+	j_exc: int = 30,
+	hp: float = 0.252e-3,
+	hs: float = 0.51e-3,
+	d31: float = -1.48e-10,
+	eps_r: float = 1700.0,
+	zeta_p: float = 0.0151 * 8,
+	zeta_q: float = 0.0392 * 10,
+	h_patch: float = 2e-3,
+	h_gap: float = 5e-3,
+	n_freq: int = 500,
+	plot: bool = True
+):
+	import numpy as np
+	import sys
+	from pathlib import Path
+	import importlib
+	import matplotlib.pyplot as plt
+
+	# project path
+	project_root = Path.cwd().parents[2]
+	sys.path.append(str(project_root))
+
+	import Modeling
+	import Modeling.models.FE2 as FE_module
+	from Modeling.models.beam_properties import PiezoBeamParams
+	from Modeling.models import FE_helpers
+
+	importlib.reload(Modeling)
+	importlib.reload(FE_module)
+
+	# excitation
+	dt = 1 / f1 / 20
+
+	def v_exc(t):
+		return A_exc * np.sin(2 * np.pi * (f0 + t * (f1 - f0) / t_end) * t)
+
+	# FE parameters
+	params_fe = PiezoBeamParams(
+		hp=hp,
+		hs=hs,
+		d31=d31,
+		eps_r=eps_r
+	)
+
+	params_fe.zeta_p = zeta_p
+	params_fe.zeta_q = zeta_q
+
+	# geometry
+	geom = FE_module.geometry_from_params(
+		params=params_fe,
+		h_patch=h_patch,
+		h_gap=h_gap
+	)
+
+	params_fe.geometry = geom
+
+	# FE model
+	fe = FE_module.PiezoBeamFE(params_fe)
+
+	ode = fe.build_ode_system(
+		j_exc=j_exc,
+		K_c=K_c,
+		K_i=K_i,
+		K_p=K_p,
+		v_exc=v_exc
+	)
+
+	# frequency-domain FRF
+	f_fe = np.linspace(f0, f1, n_freq)
+	frf_fd = FE_helpers.frf_sweep(ode, f_fe * 2 * np.pi)
+
+	w_dot_fd = frf_fd['u_dot']
+	freq_fd = frf_fd['freq']
+	vel_fd = np.mean(np.abs(w_dot_fd), axis=1)
+
+	# time-domain solve
+	ndof = ode.M.shape[0]
+	x0 = np.zeros(ndof)
+	x_dot0 = np.zeros(ndof)
+
+	result = FE_helpers.solve_newmark(
+		ode=ode,
+		dt=dt,
+		t_end=t_end,
+		beta=0.25,
+		gamma=0.5,
+		newton_tol=1e-8,
+		newton_maxiter=8,
+		x0=x0,
+		x_dot0=x_dot0
+	)
+
+	spec_td = result['spectral']
+
+	if spec_td is not None and spec_td['freq'] is not None:
+		freq_td = spec_td['freq']
+		frf_td = spec_td['FRF']
+	else:
+		freq_td = frf_td = None
+
+	# plot
+	if plot:
+		plt.figure(figsize=(10, 4))
+		plt.semilogy(freq_fd, vel_fd, 'k-', lw=2, label='FE freq-domain')
+		if freq_td is not None:
+			plt.semilogy(freq_td, frf_td, '.-', label='FE time-domain')
+		plt.xlabel('Frequency [Hz]')
+		plt.ylabel('FRF magnitude')
+		plt.xlim([f0, f1])
+		plt.grid(True)
+		plt.legend()
+		plt.tight_layout()
+		plt.show()
+
+	return {
+		'freq_fd': freq_fd,
+		'vel_fd': vel_fd,
+		'freq_td': freq_td,
+		'frf_td': frf_td,
+		'ode': ode,
+		'result_td': result
+	}

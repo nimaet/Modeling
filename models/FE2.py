@@ -11,24 +11,6 @@ from Modeling.models.newmark import newmark_beta_nonlinear
 from tqdm import tqdm
 import matplotlib.pyplot as plt
 
-@dataclass(frozen=True)
-class PiezoBeamODESystem:
-	M: np.ndarray
-	C: np.ndarray
-	f_ext_unit: np.ndarray
-	f_int: callable
-	K_tan: callable
-	f_ext: callable
-	v_exc: callable
-	N_mech: int
-	N_elec: int
-
-
-# ============================================================
-# FE MODEL
-# ============================================================
-import numpy as np
-from dataclasses import dataclass
 from scipy.linalg import eigh
 
 # ============================================================
@@ -37,10 +19,12 @@ from scipy.linalg import eigh
 
 @dataclass
 class GeometrySpec:
-	x_nodes: np.ndarray          # nodal coordinates
-	elem_EI: np.ndarray          # bending stiffness per element
-	elem_rhoA: np.ndarray        # mass per length per element
-	Gamma: np.ndarray            # electromechanical coupling (full DOF)
+	x_nodes: np.ndarray
+	elem_EI: np.ndarray
+	elem_rhoA: np.ndarray
+	# NEW (pure geometry, no FE math)
+	piezos: list   # each piezo has xL, xR, theta (optional)
+
 
 
 # ============================================================
@@ -60,10 +44,6 @@ class PiezoBeamODESystem:
 	N_elec: int
 
 
-# ============================================================
-# FE MODEL
-# ============================================================
-
 class PiezoBeamFE:
 	def __init__(self, params, n_el_patch=3, n_el_gap=2):
 		self.params = params
@@ -77,6 +57,7 @@ class PiezoBeamFE:
 			self.geom = self._build_default_geometry()
 
 		# ---- assembly ----
+		self._build_Gamma()  # build Gamma based on provided geometry
 		self._assemble_KM()
 		self._apply_bc()
 
@@ -133,28 +114,45 @@ class PiezoBeamFE:
 
 		elem_rhoA = np.array(elem_rhoA)
 		elem_EI   = np.array(elem_EI)
-
-		# ---- electromechanical coupling ----
-		Ndof = 2 * Nnodes
-		Gamma = np.zeros((Ndof, n_patches))
-		node_index = {x: i for i, x in enumerate(x_nodes)}
-
-		for j in range(n_patches):
-			kL = node_index[p.xL[j]]
-			kR = node_index[p.xR[j]]
-			Gamma[2*kR + 1, j] +=  p.theta_mech
-			Gamma[2*kL + 1, j] += -p.theta_mech
+		# build default piezo descriptors from params
+		piezos = []
+		for j in range(p.S):
+			piezos.append({
+				"xL": p.xL[j],
+				"xR": p.xR[j],
+			})
 
 		return GeometrySpec(
 			x_nodes=x_nodes,
 			elem_EI=elem_EI,
 			elem_rhoA=elem_rhoA,
-			Gamma=Gamma
+			piezos=piezos
 		)
+
 
 	# ========================================================
 	# Assembly
 	# ========================================================
+	def _build_Gamma(self):
+		x_nodes = self.geom.x_nodes
+		piezos  = self.geom.piezos
+		Nnodes = len(x_nodes)
+		S = len(piezos)
+		Ndof = 2 * Nnodes
+		Gamma = np.zeros((Ndof, S))
+		node_index = {x: i for i, x in enumerate(x_nodes)}
+		for j in range(S):
+			xL_j = piezos[j]['xL']
+			xR_j = piezos[j]['xR']
+			if xL_j not in node_index:
+				raise ValueError(f"Piezo {j}: xL={xL_j} not found in mesh nodes")
+			if xR_j not in node_index:
+				raise ValueError(f"Piezo {j}: xR={xR_j} not found in mesh nodes")
+			kL = node_index[xL_j]
+			kR = node_index[xR_j]
+			Gamma[2*kR + 1, j] +=  self.params.theta_mech
+			Gamma[2*kL + 1, j] += -self.params.theta_mech
+		self.Gamma = Gamma
 
 	def _assemble_KM(self):
 		x_nodes = self.geom.x_nodes
@@ -199,9 +197,6 @@ class PiezoBeamFE:
 		self.K = K
 		self.M = M
 
-	# ========================================================
-	# Boundary conditions
-	# ========================================================
 
 	def _apply_bc(self):
 		fixed_dofs = [0, 1]
@@ -210,7 +205,7 @@ class PiezoBeamFE:
 
 		self.K_red = self.K[np.ix_(self.free_dofs, self.free_dofs)]
 		self.M_red = self.M[np.ix_(self.free_dofs, self.free_dofs)]
-		self.Gamma_red = self.geom.Gamma[self.free_dofs, :]
+		self.Gamma_red = self.Gamma[self.free_dofs, :]
 
 	# ========================================================
 	# Eigen analysis (UNCHANGED)
@@ -262,6 +257,8 @@ class PiezoBeamFE:
 			K_i = K_i * np.ones(len(idx_f))
 		else:
 			K_i = np.delete(K_i, j_exc)
+			if len(K_i) != len(idx_f):
+				raise ValueError(f"K_i length mismatch: expected {len(idx_f)}, got {len(K_i)}")
 
 		D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
 		M_elec = self.params.Cp_scalar * np.eye(len(idx_f))
@@ -308,3 +305,142 @@ class PiezoBeamFE:
 			N_mech=N,
 			N_elec=len(idx_f)
 		)
+
+
+# ============================================================
+# Example geometry builder (NEW)
+# ============================================================
+def build_geometry_arbitrary_piezos(
+	L: float,
+	xL: np.ndarray,
+	xR: np.ndarray,
+	EI_patch: float,
+	rhoA_patch: float,
+	EI_gap: float,
+	rhoA_gap: float,
+	h_patch: float, # element size in patch regions
+	h_gap: float # element size in gap regions
+)-> GeometrySpec:
+
+	"""
+	Build geometry with explicit meshing per segment.
+
+	- Different EI / rhoA in piezo vs gap regions
+	- User-controlled element size per region
+	- Exact nodes at all piezo edges
+	"""
+
+	xL = np.asarray(xL, dtype=float)
+	xR = np.asarray(xR, dtype=float)
+
+	assert len(xL) == len(xR)
+	assert np.all(xL < xR)
+	assert np.all(xL >= 0.0) and np.all(xR <= L)
+
+	# --------------------------------------------------
+	# Build segments: (type, x_start, x_end)
+	# --------------------------------------------------
+	segments = []
+
+	if xL[0] > 0.0:
+		segments.append(("gap", 0.0, xL[0]))
+
+	for j in range(len(xL)):
+		segments.append(("patch", xL[j], xR[j]))
+		if j < len(xL)-1 and xR[j] < xL[j+1]:
+			segments.append(("gap", xR[j], xL[j+1]))
+
+	if xR[-1] < L:
+		segments.append(("gap", xR[-1], L))
+
+	# --------------------------------------------------
+	# Mesh each segment independently
+	# --------------------------------------------------
+	x_nodes = [0.0]
+	elem_EI = []
+	elem_rhoA = []
+
+	for seg_type, xa, xb in segments:
+		Ls = xb - xa
+		h = h_patch if seg_type == "patch" else h_gap
+		n_el = max(1, int(np.ceil(Ls / h)))
+
+		xs = np.linspace(xa, xb, n_el + 1)
+
+		for k in range(n_el):
+			x_nodes.append(xs[k+1])
+
+			if seg_type == "patch":
+				elem_EI.append(EI_patch)
+				elem_rhoA.append(rhoA_patch)
+			else:
+				elem_EI.append(EI_gap)
+				elem_rhoA.append(rhoA_gap)
+
+	x_nodes = np.array(x_nodes)
+	elem_EI = np.array(elem_EI)
+	elem_rhoA = np.array(elem_rhoA)
+
+	# --------------------------------------------------
+	# Piezo descriptors (geometry only)
+	# --------------------------------------------------
+	piezos = []
+	for j in range(len(xL)):
+		piezos.append({
+			"xL": xL[j],
+			"xR": xR[j],
+		})
+
+	# --------------------------------------------------
+	# Sanity: piezo edges must be exact nodes
+	# --------------------------------------------------
+	for x in np.concatenate([xL, xR]):
+		if x not in x_nodes:
+			raise RuntimeError(f"Piezo edge x={x} missing from mesh")
+
+	return GeometrySpec(
+		x_nodes=x_nodes,
+		elem_EI=elem_EI,
+		elem_rhoA=elem_rhoA,
+		piezos=piezos
+	)
+
+
+def geometry_from_params(
+	params: PiezoBeamParams,
+	h_patch: float,
+	h_gap: float
+) -> GeometrySpec:
+	"""
+	Build a GeometrySpec equivalent to PiezoBeamParams geometry
+	using build_geometry_arbitrary_piezos.
+	"""
+
+	# ---- beam length ----
+	L: float = params.L_b
+
+	# ---- piezo locations ----
+	xL: np.ndarray = params.xL
+	xR: np.ndarray = params.xR
+
+	# ---- mass per unit length ----
+	rhoA_patch: float = params.b * (
+		params.rho_s * params.hs + 2.0 * params.rho_p * params.hp
+	)
+	rhoA_gap: float = params.b * params.rho_s * params.hs
+
+	# ---- bending stiffness ----
+	EI_patch: float = params.YI
+	EI_gap: float = params.YI_s
+
+	return build_geometry_arbitrary_piezos(
+		L=L,
+		xL=xL,
+		xR=xR,
+		EI_patch=EI_patch,
+		rhoA_patch=rhoA_patch,
+		EI_gap=EI_gap,
+		rhoA_gap=rhoA_gap,
+		h_patch=h_patch,
+		h_gap=h_gap
+	)
