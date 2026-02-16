@@ -74,7 +74,7 @@ def compute_frf_from_time_domain(t, veloc, v_exc_values):
 	idx = freq >= 0
 	freq = freq[idx]
 	Y = Y[idx, :]
-	X = X[idx]
+	X = X[ idx]
 	
 	# FRF: spatially averaged magnitude of transfer function
 	# Avoid division by zero
@@ -161,15 +161,16 @@ def solve_newmark(
 	}
 
 	if do_spectral:
-		# Harmonize excitation length with solver time vecto
+		# Harmonize excitation length with solver time vector
 		v_exc_values = ode.v_exc(t)
+		
+		# Handle multi-piezo excitation: convert to 1D signal
+		if v_exc_values.ndim == 2:
+			# Multi-piezo case: shape is (n_piezos, n_time)
+			# Use RMS across piezos to get effective excitation magnitude
+			v_exc_values = np.sqrt(np.mean(v_exc_values**2, axis=0))
+		
 		assert len(v_exc_values) == u_ddot.shape[0], "Excitation length mismatch with time vector"
-		# if v_exc_values.shape[0] == t.shape[0] - 1:
-		# 	# Common case when using np.arange for excitation sampling
-		# 	v_exc_values = np.append(v_exc_values, v_exc_values[-1])
-		# elif v_exc_values.shape[0] != t.shape[0]:
-		# 	t_exc = np.linspace(t[0], t[-1], v_exc_values.shape[0])
-		# 	v_exc_values = np.interp(t, t_exc, v_exc_values)
 
 		spec = compute_frf_from_time_domain(
 			t=t,
