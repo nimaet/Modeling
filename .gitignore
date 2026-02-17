@@ -35,4 +35,6 @@ venv/
 *.csv
 *.gif
 *.mp4
+*.jpg
+*.jpeg
 
