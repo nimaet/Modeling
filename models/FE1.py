@@ -514,7 +514,7 @@ class PiezoBeamFE:
 		# Excitation (closure-safe)
 		# ----------------------------
 		if np.isscalar(K_i):
-				K_i = K_i * np.ones(len(idx_f))
+			K_i = K_i * np.ones(len(idx_f))
 		else:
 			K_i = np.delete(K_i, j_exc)
 
