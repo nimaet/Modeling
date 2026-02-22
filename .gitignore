@@ -37,4 +37,7 @@ venv/
 *.mp4
 *.jpg
 *.jpeg
+*.json
+*.mat
+
 

@@ -34,7 +34,10 @@ class GeometrySpec:
 @dataclass(frozen=True)
 class PiezoBeamODESystem:
 	M: np.ndarray
+	M_mech: np.ndarray
+	K_mech: np.ndarray
 	C: np.ndarray
+	D: np.ndarray
 	f_ext_unit: np.ndarray
 	f_int: callable
 	K_tan: callable
@@ -237,7 +240,7 @@ class PiezoBeamFE:
 
 	def build_ode_system(
 		self,
-		j_exc=0,
+		j_exc=[30],
 		R_c=1e3,
 		K_p=0.02,
 		K_i=0.0,
@@ -283,6 +286,7 @@ class PiezoBeamFE:
 
 		# Damping and mass matrices
 		D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+		print('alpha, beta', self.params.c_alpha, self.params.c_beta)
 		M_elec = self.params.Cp_scalar * np.eye(len(idx_f))
 
 		# Combined ODE state matrix (mech DOFs + electrical DOFs)
@@ -332,7 +336,10 @@ class PiezoBeamFE:
 
 		return PiezoBeamODESystem(
 			M=M_ODE,
+			M_mech=self.M_red,
+			K_mech=self.K_red,
 			C=C_ODE,
+			D=D,
 			f_int=f_int,
 			K_tan=K_tan,
 			f_ext=f_ext,

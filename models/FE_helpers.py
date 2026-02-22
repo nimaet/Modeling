@@ -202,6 +202,25 @@ def frequency_response_linear(ode,	omega ):
 
 	return x_hat
 
+def frequency_response_SC(ode,	omega ):
+	"""
+	Linear frequency-domain response of the coupled ODE system.
+
+	Solves:
+	(-ω² M + iω C + K) x̂ = f̂
+	"""
+
+	M = ode.M_mech
+	C = ode.D
+	K = ode.K_mech
+	# harmonic forcing amplitude
+	f_hat = ode.f_ext_unit.copy()
+	f_hat = f_hat[:ode.N_mech]  # Only mechanical forcing
+	Z = -omega**2 * M + 1j*omega*C + K
+	x_hat = np.linalg.solve(Z, f_hat)
+
+	return x_hat
+
 def frf_sweep(ode, omega_vec):
 	"""
 	Compute frequency response sweep over a range of frequencies.
@@ -232,7 +251,8 @@ def frf_sweep(ode, omega_vec):
 	X = np.zeros((len(omega_vec), ndof), dtype=complex)
 
 	for k, w in enumerate(tqdm(omega_vec, desc="FRF sweep")):
-		X[k] = frequency_response_linear(ode, w)
+		X[k] = frequency_response_linear(ode, w) 
+		
 
 	# Separate mechanical and electrical DOFs
 	u = X[:, :N_mech:2]                    # mechanical displacement
@@ -253,6 +273,49 @@ def frf_sweep(ode, omega_vec):
 		'u_dot': u_dot,
 		'q': q,
 		'v': v,
+		'X': X  # full state for backwards compatibility
+	}
+
+
+def frf_sweep_SC(ode, omega_vec):
+	"""
+	Compute frequency response sweep over a range of frequencies.
+	
+	Parameters
+	----------
+	ode : PiezoBeamODESystem
+		ODE system object with M, C, K_tan, etc.
+	omega_vec : array_like
+		Array of angular frequencies [rad/s]
+	
+	Returns
+	-------
+	result : dict
+		Dictionary containing:
+		- 'omega': angular frequency array [rad/s]
+		- 'freq': frequency array [Hz]
+		- 'u': mechanical displacement response (n_freq, N_mech), complex
+		- 'u_dot': mechanical velocity response (n_freq, N_mech), complex
+		- 'q': electrical charge response (n_freq, N_elec), complex
+		- 'v': voltage response (n_freq, N_elec), complex
+		- 'X': full state vector (n_freq, ndof), complex (for backwards compatibility)
+	"""
+	N_mech = ode.N_mech
+	X = np.zeros((len(omega_vec), N_mech), dtype=complex)
+	for k, w in enumerate(tqdm(omega_vec, desc="FRF sweep")):
+		X[k] = frequency_response_SC(ode, w) 
+	# Separate mechanical and electrical DOFs
+	u = X[:, :N_mech:2]                    # mechanical displacement
+	# Velocity and voltage (derivatives in frequency domain)
+	u_dot = np.zeros_like(u)
+	
+	for k, w in enumerate(omega_vec):
+		u_dot[k] = 1j * w * u[k]         # velocity = iω * displacement
+	return {
+		'omega': omega_vec,
+		'freq': omega_vec / (2*np.pi),
+		'u': u,
+		'u_dot': u_dot,
 		'X': X  # full state for backwards compatibility
 	}
 
