@@ -6,7 +6,27 @@ import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import numpy as np
 from tqdm import tqdm
-USE_TQDM = sys.stdout.isatty()
+import os
+import sys
+
+def use_tqdm():
+	# Disable in SLURM jobs
+	if "SLURM_JOB_ID" in os.environ:
+		return False
+	
+	# Enable in Jupyter notebooks
+	try:
+		from IPython import get_ipython
+		if get_ipython() is not None:
+			return True
+	except Exception:
+		pass
+	
+	# Enable in normal terminals
+	return sys.stdout.isatty()
+
+USE_TQDM = use_tqdm()
+
 def newmark_beta_nonlinear(
 	M, C,
 	f_int, K_tan,
