@@ -2,9 +2,9 @@
 #SBATCH --job-name=FE_sweep_amp_kc
 #SBATCH --array=0-13               # 14 cases (7 amps x 2 Kc cases)
 #SBATCH --ntasks=1                 # 1 task per array task
-#SBATCH --cpus-per-task=4          # Adjust based on available cores
-#SBATCH --mem=16G                  # Memory per task
-#SBATCH --time=02:00:00            # Adjust as needed
+#SBATCH --cpus-per-task=1          # Adjust based on available cores
+#SBATCH --mem=8G                  # Memory per task
+#SBATCH -t120           # Adjust as needed
 #SBATCH --output=logs/slurm_%A_%a.log
 #SBATCH --error=logs/slurm_%A_%a.err
 
