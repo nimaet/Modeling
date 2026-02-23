@@ -10,6 +10,7 @@ from scipy.linalg import eigh
 from Modeling.models.newmark import newmark_beta_nonlinear
 from tqdm import tqdm
 
+
 def compute_frf_from_time_domain(t, veloc, v_exc_values):
 	"""
 	Compute Frequency Response Function (FRF) from time domain response.

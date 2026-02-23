@@ -1,10 +1,12 @@
 # %%
+import sys
+
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.integrate import solve_ivp
 import numpy as np
 from tqdm import tqdm
-
+USE_TQDM = sys.stdout.isatty()
 def newmark_beta_nonlinear(
 	M, C,
 	f_int, K_tan,
@@ -45,7 +47,7 @@ def newmark_beta_nonlinear(
 
 	t = 0.0
 
-	for nstep in tqdm(range(n_steps), desc="Newmark Integration", unit="step"):
+	for nstep in tqdm(range(n_steps), desc="Newmark Integration", unit="step", disable=not USE_TQDM):
 		t += dt
 
 		# Predictor (constant acceleration predictor)
