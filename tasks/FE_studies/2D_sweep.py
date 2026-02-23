@@ -221,6 +221,8 @@ print(f"Failed:     {len(failed)}")
 # Aggregate results
 # =========================================================
 results_by_kc = defaultdict(lambda: {
+	"kc_label": None,
+	"kc_vec": None,
 	"amps": [],
 	"data": defaultdict(list)
 })
@@ -230,6 +232,8 @@ for r in successful:
 	label = data["kc_label"].item()
 
 	block = results_by_kc[label]
+	block["kc_label"] = label
+	block["kc_vec"] = data["kc_vec"]
 	block["amps"].append(float(data["amp"]))
 
 	for key in OUTPUT_SPEC:
@@ -269,6 +273,7 @@ plt.close(fig)
 # =========================================================
 with open(pickle_path, "wb") as f:
 	pickle.dump(dict(
+		Kc_labels=[case["label"] for case in Kc_cases],
 		results_by_kc=dict(results_by_kc),
 		failed=failed,
 		run_dir=str(run_dir)
