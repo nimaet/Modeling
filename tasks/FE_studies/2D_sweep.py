@@ -39,7 +39,7 @@ params_fe = PiezoBeamParams(
 params_fe.zeta_p = 0.0151 * 8
 params_fe.zeta_q = 0.0392 * 10
 
-K_p = 0.02
+K_p = 0.015
 interface_idx = 10
 beta = 0.0
 
@@ -60,10 +60,10 @@ f0 = 1000
 f1 = 3000
 dt = 1 / f1 / 50
 
-# amp_list = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) * 125
-amp_list = np.array([0.05, 0.1,  0.2, 0.25,  0.4]) * 125
-# kc_magnitudes = np.array([5e9, 8e9, 1e10, 1.5e10, 2e10, 2.5e10, 3e10])
-kc_magnitudes = np.array([2e10, 2.5e10])
+amp_list = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) * 125
+# amp_list = np.array([0.05, 0.1,  0.2, 0.25,  0.4]) * 125
+kc_magnitudes = np.array([ 8e9, 2e10, 3e10])
+# kc_magnitudes = np.array([4e10, 6e10])
 
 Kc_cases = [
 	{
