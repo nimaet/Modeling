@@ -222,6 +222,98 @@ def frequency_response_SC(ode,	omega ):
 
 	return x_hat
 
+import numpy as np
+from scipy.linalg import eigh
+
+
+def frequency_response_SC_modal(
+	ode,
+	omega: float,
+	freq_max: float = 5000,
+	n_modes_max: int | None = None
+):
+	"""
+	Modal-reduced linear frequency-domain response
+	with residual flexibility correction.
+
+	Parameters
+	----------
+	ode : PiezoBeamODESystem
+	omega : float
+		Excitation frequency [rad/s]
+	freq_max : float
+		Maximum frequency of interest in Hz
+		(used to determine modal cutoff)
+	n_modes_max : int | None
+		Optional hard cap on number of retained modes
+
+	Returns
+	-------
+	x_hat : ndarray
+		Complex displacement response (mechanical DOFs only)
+	"""
+
+	M = ode.M_mech
+	C = ode.D
+	K = ode.K_mech
+
+	f_hat = ode.f_ext_unit[:ode.N_mech]
+
+	# -----------------------------------------
+	# 1) Solve eigenproblem
+	# -----------------------------------------
+	# K phi = w^2 M phi
+	evals, evecs = eigh(K, M)
+
+	omega_n = np.sqrt(np.maximum(evals, 0.0))  # rad/s
+	f_n = omega_n / (2*np.pi)
+
+	# -----------------------------------------
+	# 2) Select modes
+	# -----------------------------------------
+	# Keep modes up to ~2.5 × freq_max
+	cutoff = 1 * freq_max
+	mode_mask = f_n <= cutoff
+
+	if n_modes_max is not None:
+		mode_indices = np.where(mode_mask)[0][:n_modes_max]
+	else:
+		mode_indices = np.where(mode_mask)[0]
+
+	Phi = evecs[:, mode_indices]
+	omega_r = omega_n[mode_indices]
+
+	# -----------------------------------------
+	# 3) Modal matrices
+	# -----------------------------------------
+	Mm = Phi.T @ M @ Phi
+	Cm = Phi.T @ C @ Phi
+	Km = Phi.T @ K @ Phi
+	fm = Phi.T @ f_hat
+
+	# -----------------------------------------
+	# 4) Solve reduced system
+	# -----------------------------------------
+	Zm = -omega**2 * Mm + 1j*omega*Cm + Km
+	q_hat = np.linalg.solve(Zm, fm)
+
+	# Back to physical coordinates
+	x_modal = Phi @ q_hat
+
+	# -----------------------------------------
+	# 5) Residual flexibility correction
+	# -----------------------------------------
+	# K^{-1} f  minus modal static contribution
+	K_inv_f = np.linalg.solve(K, f_hat)
+
+	Km_static = Phi @ np.linalg.solve(Km, fm)
+
+	x_residual = K_inv_f - Km_static
+
+	x_hat = x_modal #+ x_residual
+
+	return x_hat
+
 def frf_sweep(ode, omega_vec):
 	"""
 	Compute frequency response sweep over a range of frequencies.
@@ -253,6 +345,8 @@ def frf_sweep(ode, omega_vec):
 
 	for k, w in enumerate(tqdm(omega_vec, desc="FRF sweep")):
 		X[k] = frequency_response_linear(ode, w) 
+
+		
 		
 
 	# Separate mechanical and electrical DOFs
@@ -304,7 +398,8 @@ def frf_sweep_SC(ode, omega_vec):
 	N_mech = ode.N_mech
 	X = np.zeros((len(omega_vec), N_mech), dtype=complex)
 	for k, w in enumerate(tqdm(omega_vec, desc="FRF sweep")):
-		X[k] = frequency_response_SC(ode, w) 
+		# X[k] = frequency_response_SC(ode, w) 
+		X[k] = frequency_response_SC_modal(ode, w) 
 	# Separate mechanical and electrical DOFs
 	u = X[:, :N_mech:2]                    # mechanical displacement
 	# Velocity and voltage (derivatives in frequency domain)

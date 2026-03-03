@@ -26,6 +26,10 @@ class PiezoBeamParams:
 	# zeta_q: float = 0.0392
 	omega_p: float = 2*np.pi*1070
 	omega_q: float = 2*np.pi*5892.5
+	zeta_dict: dict = field(default_factory=lambda: { 1: 0.02, 2: 0.025, 3: 0.03, 4: 0.007, 5: 0.0075, 6:0.0085, 7:0.008, 8:0.007,
+			 9: 0.007, 10: 0.0075, 11: 0.008, 12: 0.009, 13: 0.01, 14: 0.012, 15: 0.016, 16: 0.017,
+			 17: 0.02, 'rest': 0.03
+			 })
 
 	# ===================== Derived quantities =====================
 	L_b: float = field(init=False)

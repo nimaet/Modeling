@@ -89,6 +89,10 @@ class SweepSpec:
 # =========================================================
 # BASE MODEL PARAMETERS (NOT SWEPT)
 # =========================================================
+SAVE_PREFIX = "3_1_internalResonance"
+sim_dat_dir = Path.cwd() / "sim_dat"
+sim_dat_dir.mkdir(parents=True, exist_ok=True)
+no_cores = 24
 params_fe = PiezoBeamParams(
 	hp=0.252e-3,
 	hs=0.51e-3,
@@ -100,37 +104,44 @@ params_fe.zeta_p = 0.0151 * 8
 params_fe.zeta_q = 0.0392 * 10
 
 interface_idx = 10
-beta = 0.0
+beta = 0.3
+"""beta = 0.3
+# # ======= K_p sweep in frequency domain =======
+ki0 = 4000
+ki1 = ki0 / (1 - beta)**2 
+ki2 = ki0 / (1 + beta)**2 
+K_i = np.array([ki1, ki2] *(interface_idx//2) + [ki2, ki1] *(15-interface_idx//2) + [ki2])"""
+ki0 = 4000
 
-ki0 = 1800
-ki1 = ki0 / (1 - beta)**2
-ki2 = ki0 / (1 + beta)**2
+def Ki_builder(beta):
+	ki1 = ki0 / (1 - beta)**2
+	ki2 = ki0 / (1 + beta)**2
+	return np.array([ki1, ki2] * (interface_idx // 2)+ [ki1, ki2] * (15 - interface_idx // 2)+ [ki1])
 
-K_i_base = np.array(
-	[ki1, ki2] * (interface_idx // 2)
-	+ [ki2, ki1] * (15 - interface_idx // 2)
-	+ [ki2]
-)
+def Kc_builder(kc):
+	return np.array([-kc, kc] * (interface_idx // 2) + [kc, -kc] * (15 - interface_idx // 2))
 
 BASE_PARAMS = dict(
-	K_p=0.015,
-	K_i=K_i_base,
+	K_p=0.03,
+	K_i=500/1.25,#Ki_builder(beta),
+	K_c = 3e10,
 	R_c=1e3,
 )
 
 # =========================================================
 # TIME / EXCITATION
 # =========================================================
-t_end = 0.01
+t_end = 1
 f0 = 1000
 f1 = 3000
-dt = 1 / f1 / 50
+dt = 1 / max(f0, f1) / 50
 
 # =========================================================
 # DEFINE SWEEP (EDIT ONLY THIS BLOCK)
 # =========================================================
 amp_list = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.4]) * 125
-kc_magnitudes = np.array([8e9, 2e10, 3e10])
+# kc_magnitudes = np.array([  4e10, 6e10, 7e10, 8e10, 9e10, 1e11])
+kc_magnitudes = np.array([    1e10, 3e10 ])
 
 sweep_spec = SweepSpec([
 	SweepParam(
@@ -139,17 +150,37 @@ sweep_spec = SweepSpec([
 		description="Excitation amplitude",
 	),
 
-	SweepParam(
-		key="K_c",
-		values=kc_magnitudes.tolist(),
-		# target="K_c",
-		builder=lambda kc: np.array(
-			[kc, kc] * (interface_idx // 2)
-			+ [kc, kc] * (15 - interface_idx // 2)
-		),
-		description="Nonlinear stiffness distribution",
+	# SweepParam(
+	# 	key="K_c",
+	# 	values=kc_magnitudes.tolist(),
+	# 	# target="K_c",
+	# 	builder=lambda kc: np.array(
+	# 		[-kc, kc] * (interface_idx // 2)
+	# 		+ [kc, -kc] * (15 - interface_idx // 2)
+	# 	),
+	# 	description="Nonlinear stiffness distribution",
+	# ),
+	# SweepParam(
+	# 	key="beta",
+	# 	values= [0.2, 0.3, 0.4, 0.5, 0.6],
+	# 	builder=Ki_builder,
+	# 	target="K_i",
+	# 	description="linear inductance",
+	# ),
+	# 	SweepParam(
+	# 	key="K_c",
+	# 	values= [-k for k in kc_magnitudes.tolist()] + kc_magnitudes.tolist() ,
+	# 	target="K_c",
+	# 	description="nonlinear inductance",
+	# ),
+			SweepParam(
+		key="K_i",
+		values= (np.array([1.23, 1.24, 1.25, 1.26, 1.27]) * 500).tolist(),
+		target="K_i",
+		description="linear inductance",
 	),
 ])
+
 
 # =========================================================
 # OUTPUT EXTRACTION
@@ -164,9 +195,7 @@ OUTPUT_SPEC = {
 # =========================================================
 # FILESYSTEM
 # =========================================================
-SAVE_PREFIX = "sweep"
-sim_dat_dir = Path.cwd() / "sim_dat"
-sim_dat_dir.mkdir(parents=True, exist_ok=True)
+
 
 def to_jsonable(obj):
 	if isinstance(obj, dict):
@@ -240,8 +269,8 @@ def run_single_simulation(
 			t_end=t_end,
 			beta=0.25,
 			gamma=0.5,
-			newton_tol=1e-8,
-			newton_maxiter=8,
+			newton_tol=1e-6,
+			newton_maxiter=32,
 			x0=np.zeros(ode.M.shape[0]),
 			x_dot0=np.zeros(ode.M.shape[0]),
 			do_spectral=True
@@ -275,11 +304,6 @@ npz_dir.mkdir(parents=True)
 
 CONFIG = {
 	"created_at": datetime.now().isoformat(),
-	"fe_params": to_jsonable(vars(params_fe)),
-	"base_params": {
-		k: to_jsonable(v)
-		for k, v in BASE_PARAMS.items()
-	},
 	"time": dict(dt=dt, t_end=t_end, f0=f0, f1=f1),
 	"sweep_spec": [
 		{
@@ -290,6 +314,11 @@ CONFIG = {
 		}
 		for p in sweep_spec.params
 	],
+	"fe_params": to_jsonable(vars(params_fe)),
+	"base_params": {
+		k: to_jsonable(v)
+		for k, v in BASE_PARAMS.items()
+	},
 }
 
 with open(run_dir / "config.json", "w") as f:
@@ -298,7 +327,7 @@ with open(run_dir / "config.json", "w") as f:
 # =========================================================
 # RUN SWEEP
 # =========================================================
-results = Parallel(n_jobs=22, verbose=10)(
+results = Parallel(n_jobs=no_cores, verbose=10)(
 	delayed(run_single_simulation)(
 		i, s, BASE_PARAMS,
 		params_fe,
@@ -318,7 +347,10 @@ failed = []
 for r in results:
 	if r["ok"]:
 		npz = np.load(npz_dir / f"sim_{r['index']:05d}.npz", allow_pickle=True)
+		sweep_entry = SWEEP_GRID[r["index"]]
 		successful.append({
+			"index": r["index"],
+			"sweep_entry": to_jsonable(sweep_entry),
 			"params": npz["params"].item(),
 			"data": npz["data"].item(),
 		})

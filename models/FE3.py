@@ -63,6 +63,8 @@ class PiezoBeamFE:
 		self._build_Gamma()  # build Gamma based on provided geometry
 		self._assemble_KM()
 		self._apply_bc()
+		self.eigen_analysis()
+		self.damping_matrix_from_modal_damping()
 
 	# ========================================================
 	# Default geometry (EXTRACTED, UNCHANGED LOGIC)
@@ -232,8 +234,18 @@ class PiezoBeamFE:
 		self.freq = freq
 		self.omega = omega
 		self.Phi = Phi
+		self.eigvecs = eigvecs
 		return freq, omega, Phi
 
+	def damping_matrix_from_modal_damping(self):
+		self.zeta = np.array([self.params.zeta_dict.get(i+1, self.params.zeta_dict['rest']) for i in range(self.M_red.shape[0])])	
+		assert len(self.zeta) == len(self.omega), "Length of zeta must match number of modes" 
+		C_modal = 2 *self.zeta * self.omega
+		# C_red = self.Phi[self.free_dofs, :].T @ (self.params.c_alpha*self.M + self.params.c_beta*self.K) @ self.Phi[self.free_dofs, :]
+		C_modal_matrix = np.diag(C_modal)
+		C_reconstructed = np.linalg.inv(self.eigvecs).T @ C_modal_matrix @ np.linalg.inv(self.eigvecs)
+		self.C_red = C_reconstructed
+		return C_reconstructed 
 	# ========================================================
 	# ODE construction (UNCHANGED)
 	# ========================================================
@@ -285,8 +297,11 @@ class PiezoBeamFE:
 				raise ValueError(f"K_i length mismatch: expected {len(idx_f)}, got {len(K_i)}")
 
 		# Damping and mass matrices
-		D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
-		print('alpha, beta', self.params.c_alpha, self.params.c_beta)
+		if hasattr(self, 'C_red'):
+			D = self.C_red 
+		else: 
+			D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+		# print('alpha, beta', self.params.c_alpha, self.params.c_beta)
 		M_elec = self.params.Cp_scalar * np.eye(len(idx_f))
 
 		# Combined ODE state matrix (mech DOFs + electrical DOFs)
@@ -350,6 +365,170 @@ class PiezoBeamFE:
 		)
 
 
+	def build_ode_system_nonlocal(
+			self,
+			j_exc=[30],
+			R_c=1e3,
+			K_p=0.02,
+			v_exc=lambda t: 1,
+			freq_domain_amps=np.array([1.0]),
+			electrical_network=None,
+	):
+		"""
+		Build ODE system for coupled piezo–beam dynamics using
+		an energy-based electrical network description.
+
+		Electrical DOFs are flux linkages φ.
+		Nonlocal and nonlinear elements are defined via energy functions.
+		"""
+
+		# -----------------------------
+		# Mechanical / electrical sizes
+		# -----------------------------
+		N = self.M_red.shape[0]
+		S = self.Gamma_red.shape[1]
+
+		j_exc = np.atleast_1d(j_exc).astype(int)
+		j_exc = np.unique(j_exc)
+
+		if np.any((j_exc < 0) | (j_exc >= S)):
+			raise ValueError("j_exc index out of range")
+
+		idx_all = np.arange(S)
+		idx_f = np.setdiff1d(idx_all, j_exc)
+		Nf = len(idx_f)
+
+		Gamma_f = self.Gamma_red[:, idx_f]
+		Gamma_e = self.Gamma_red[:, j_exc]
+
+		# -----------------------------
+		# Mass and damping matrices
+		# -----------------------------
+		D = self.params.c_alpha * self.M_red + self.params.c_beta * self.K_red
+		M_elec = self.params.Cp_scalar * np.eye(Nf)
+
+		M_ODE = np.block([
+			[self.M_red, np.zeros((N, Nf))],
+			[np.zeros((Nf, N)), M_elec]
+		])
+
+		C_ODE = np.block([
+			[D, -Gamma_f],
+			[Gamma_f.T, (K_p / R_c) * np.eye(Nf)]
+		])
+
+		# -----------------------------
+		# Electrical internal force
+		# -----------------------------
+		def electrical_force(qf):
+			f = np.zeros(Nf)
+
+			if electrical_network is None:
+				return f
+
+			for elem in electrical_network["elements"]:
+				i, j = elem["nodes"]
+
+				phi_i = qf[i]
+				phi_j = 0.0 if j in (None, "gnd") else qf[j]
+
+				dphi = phi_i - phi_j
+				g = elem["grad"](dphi)
+
+				f[i] += g
+				if j not in (None, "gnd"):
+					f[j] -= g
+
+			return f
+
+		# -----------------------------
+		# Electrical tangent matrix
+		# -----------------------------
+		def electrical_tangent(qf):
+			K = np.zeros((Nf, Nf))
+
+			if electrical_network is None:
+				return K
+
+			for elem in electrical_network["elements"]:
+				i, j = elem["nodes"]
+
+				phi_i = qf[i]
+				phi_j = 0.0 if j in (None, "gnd") else qf[j]
+
+				dphi = phi_i - phi_j
+				k = elem["hess"](dphi)
+
+				K[i, i] += k
+				if j not in (None, "gnd"):
+					K[j, j] += k
+					K[i, j] -= k
+					K[j, i] -= k
+
+			return K
+
+		# -----------------------------
+		# Internal force (full system)
+		# -----------------------------
+		def f_int(x):
+			u = x[:N]
+			qf = x[N:]
+
+			return np.concatenate([
+				self.K_red @ u,
+				electrical_force(qf) / R_c
+			])
+
+		# -----------------------------
+		# Tangent stiffness (Newton)
+		# -----------------------------
+		def K_tan(x):
+			qf = x[N:]
+
+			Kqq = electrical_tangent(qf) / R_c
+
+			return np.block([
+				[self.K_red, np.zeros((N, Nf))],
+				[np.zeros((Nf, N)), Kqq]
+			])
+
+		# -----------------------------
+		# External excitation force
+		# -----------------------------
+		def f_ext(t):
+			v_t = v_exc(t)
+
+			if np.isscalar(v_t):
+				v_t = np.full(len(j_exc), v_t)
+			else:
+				v_t = np.asarray(v_t)
+				if v_t.shape[0] != len(j_exc):
+					raise ValueError("v_exc length mismatch")
+
+			return np.concatenate([
+				Gamma_e @ v_t,
+				np.zeros(Nf)
+			])
+
+		f_ext_unit = np.concatenate([
+			Gamma_e @ (np.ones(len(j_exc)) * freq_domain_amps),
+			np.zeros(Nf)
+		])
+
+		return PiezoBeamODESystem(
+			M=M_ODE,
+			M_mech=self.M_red,
+			K_mech=self.K_red,
+			C=C_ODE,
+			D=D,
+			f_int=f_int,
+			K_tan=K_tan,
+			f_ext=f_ext,
+			v_exc=v_exc,
+			f_ext_unit=f_ext_unit,
+			N_mech=N,
+			N_elec=Nf
+		)
 # ============================================================
 # Example geometry builder (NEW)
 # ============================================================
@@ -764,3 +943,56 @@ def geometry_from_params(
 		h_patch=h_patch,
 		h_gap=h_gap
 	)
+
+def build_linear_electrical_network(
+		Nf: int,
+		K_i: float | np.ndarray,
+		K_i_nl: float,
+		periodic: bool = False,
+):
+	"""
+	Generate an energy-based electrical network with:
+	- local linear inductors at each piezo (K_i)
+	- nonlocal linear inductors between nearest neighbors (K_i_nl)
+
+	Flux-based formulation: U = 1/2 * K * (Δφ)^2
+	"""
+
+	elements = []
+
+	# -------------------------
+	# Local inductors
+	# -------------------------
+	if np.isscalar(K_i):
+		K_i = K_i * np.ones(Nf)
+
+	for i in range(Nf):
+		Ki = K_i[i]
+
+		elements.append({
+			"nodes": (i, None),
+			"energy": lambda dphi, Ki=Ki: 0.5 * Ki * dphi**2,
+			"grad":   lambda dphi, Ki=Ki: Ki * dphi,
+			"hess":   lambda dphi, Ki=Ki: Ki,
+		})
+
+	# -------------------------
+	# Nonlocal inductors
+	# -------------------------
+	for i in range(Nf - 1):
+		elements.append({
+			"nodes": (i, i + 1),
+			"energy": lambda dphi, Knl=K_i_nl: 0.5 * Knl * dphi**2,
+			"grad":   lambda dphi, Knl=K_i_nl: Knl * dphi,
+			"hess":   lambda dphi, Knl=K_i_nl: Knl,
+		})
+
+	if periodic and Nf > 2:
+		elements.append({
+			"nodes": (Nf - 1, 0),
+			"energy": lambda dphi, Knl=K_i_nl: 0.5 * Knl * dphi**2,
+			"grad":   lambda dphi, Knl=K_i_nl: Knl * dphi,
+			"hess":   lambda dphi, Knl=K_i_nl: Knl,
+		})
+
+	return {"elements": elements}
