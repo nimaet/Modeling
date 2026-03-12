@@ -18,17 +18,17 @@ class PiezoBeamParams:
 	E_s: float = 70e9			# substrate Young's modulus [Pa]
 	s11: float = 1.5873e-11			# piezo compliance [m^2/N]
 	s44: float = 4.75e-11			# piezo shear compliance [m^2/N]
-	d31: float = -1.75e-10			# piezo strain constant [C/N]
+	d31: float = -1.45e-10			# piezo strain constant [C/N]
 	eps0: float = 8.854e-12			# vacuum permittivity
-	eps_r: float = 1900.0			# relative permittivity
+	eps_r: float = 1700			# relative permittivity
 	nu_s: float = 0.33			# Poisson ratio (substrate)
-	# zeta_p: float = 0.0151
-	# zeta_q: float = 0.0392
-	omega_p: float = 2*np.pi*1070
-	omega_q: float = 2*np.pi*5892.5
+	# zeta_p: float = 0.0001
+	# zeta_q: float = 0.0001
+	omega_p: float = 2*np.pi*100
+	omega_q: float = 2*np.pi*6000
 	zeta_dict: dict = field(default_factory=lambda: { 1: 0.02, 2: 0.025, 3: 0.03, 4: 0.007, 5: 0.0075, 6:0.0085, 7:0.008, 8:0.007,
-			 9: 0.007, 10: 0.0075, 11: 0.008, 12: 0.009, 13: 0.01, 14: 0.012, 15: 0.016, 16: 0.017,
-			 17: 0.02, 'rest': 0.03
+			 9: 0.007, 10: 0.0075, 11: 0.008, 12: 0.009, 13: 0.01, 14: 0.012, 15: 0.014, 16: 0.014,
+			 17: 0.013, 18: 0.013, 19: 0.015, 20: 0.023, 21: 0.024, 22: 0.025, 'rest': 0.4
 			 })
 
 	# ===================== Derived quantities =====================
@@ -51,8 +51,8 @@ class PiezoBeamParams:
 	xR: np.ndarray = field(init=False)
 	c_alpha: float = field(init=False)
 	c_beta: float = field(init=False)
-	_zeta_p: float = field(default=0.0151, repr=False)
-	_zeta_q: float = field(default=0.0392, repr=False)
+	_zeta_p: float = field(default=0.0001, repr=False)
+	_zeta_q: float = field(default=0.0001, repr=False)
 
 
 	def __post_init__(self):

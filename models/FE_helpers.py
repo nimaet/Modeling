@@ -197,7 +197,7 @@ def frequency_response_linear(ode,	omega ):
 	C = ode.C
 	K = ode.K_tan(np.zeros(M.shape[0]))
 	# harmonic forcing amplitude
-	f_hat = ode.f_ext_unit
+	f_hat = ode.f_ext_freq_domain
 	Z = -omega**2 * M + 1j*omega*C + K
 	x_hat = np.linalg.solve(Z, f_hat)
 

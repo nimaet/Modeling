@@ -38,7 +38,7 @@ class PiezoBeamODESystem:
 	K_mech: np.ndarray
 	C: np.ndarray
 	D: np.ndarray
-	f_ext_unit: np.ndarray
+	f_ext_freq_domain: np.ndarray
 	f_int: callable
 	K_tan: callable
 	f_ext: callable
@@ -48,11 +48,10 @@ class PiezoBeamODESystem:
 
 
 class PiezoBeamFE:
-	def __init__(self, params, n_el_patch=3, n_el_gap=2):
+	def __init__(self, params,  n_el_patch=3, n_el_gap=2):
 		self.params = params
 		self.n_el_patch = n_el_patch
 		self.n_el_gap   = n_el_gap
-
 		# ---- geometry selection (NEW) ----
 		if hasattr(self.params, "geometry"):
 			self.geom = self.params.geometry
@@ -204,9 +203,9 @@ class PiezoBeamFE:
 
 
 	def _apply_bc(self):
-		fixed_dofs = [0, 1]
 		all_dofs = np.arange(self.Ndof)
-		self.free_dofs = np.setdiff1d(all_dofs, fixed_dofs)
+		self.fixed_dofs = [0, 1]
+		self.free_dofs = np.setdiff1d(all_dofs, self.fixed_dofs)
 
 		self.K_red = self.K[np.ix_(self.free_dofs, self.free_dofs)]
 		self.M_red = self.M[np.ix_(self.free_dofs, self.free_dofs)]
@@ -258,7 +257,7 @@ class PiezoBeamFE:
 		K_i=0.0,
 		K_c=0.0,
 		v_exc=lambda t: 1, # can be scalar or vector of length len(j_exc)
-		freq_domain_amps=np.array([1.0]) 
+		freq_domain_amps=np.array([1.0]),
 	):
 		"""Build ODE system for coupled piezo-beam dynamics.
 		
@@ -298,7 +297,7 @@ class PiezoBeamFE:
 
 		# Damping and mass matrices
 		if hasattr(self, 'C_red'):
-			D = self.C_red 
+			D = self.C_red + self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
 		else: 
 			D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
 		# print('alpha, beta', self.params.c_alpha, self.params.c_beta)
@@ -347,7 +346,183 @@ class PiezoBeamFE:
 					)
 			return np.concatenate([Gamma_e @ v_t, np.zeros(len(idx_f))])
 
-		f_ext_unit = np.concatenate([Gamma_e @ (np.ones(len(j_exc)) * freq_domain_amps), np.zeros(len(idx_f))])
+		f_ext_freq_domain = np.concatenate([Gamma_e @ (np.ones(len(j_exc)) * freq_domain_amps), np.zeros(len(idx_f))])
+		# f_ext_freq_domain = f_ext(0.0)
+		return PiezoBeamODESystem(
+			M=M_ODE,
+			M_mech=self.M_red,
+			K_mech=self.K_red,
+			C=C_ODE,
+			D=D,
+			f_int=f_int,
+			K_tan=K_tan,
+			f_ext=f_ext,
+			v_exc=v_exc,
+			f_ext_freq_domain=f_ext_freq_domain,
+			N_mech=N,
+			N_elec=len(idx_f)
+		)
+
+
+	def build_ode_system_base_excitation(
+			self,
+			u_base,                 # base displacement function u_base(t)
+			du_base=None,           # optional velocity
+			ddu_base=None,          # optional acceleration
+			j_exc=[30],
+			R_c=1e3,
+			K_p=0.02,
+			K_i=0.0,
+			K_c=0.0,
+			v_exc=lambda t: 0.0,
+	):
+		"""
+		ODE system with prescribed base displacement.
+
+		Base DOF = DOF 0 (before BC removal).
+		The base motion enters as equivalent forcing.
+		"""
+
+		N = self.M_red.shape[0]
+		S = self.Gamma_red.shape[1]
+
+		# Allow no electrical actuation by passing j_exc=None or j_exc=[]
+		if j_exc is None:
+			j_exc = np.array([], dtype=int)
+		else:
+			j_exc = np.atleast_1d(j_exc).astype(int)
+			j_exc = np.unique(j_exc)
+
+		if np.any((j_exc < 0) | (j_exc >= S)):
+			raise ValueError(f"j_exc indices out of range [0, {S-1}]")
+
+		idx_all = np.arange(S)
+		idx_f = np.setdiff1d(idx_all, j_exc)
+
+		# Normalize K_i to the free piezo channels
+		if np.isscalar(K_i):
+			K_i = K_i * np.ones(len(idx_f))
+		else:
+			K_i = np.asarray(K_i)
+			if K_i.shape[0] == S:
+				K_i = np.delete(K_i, j_exc)
+			if K_i.shape[0] != len(idx_f):
+				raise ValueError(f"K_i length mismatch: expected {len(idx_f)}, got {K_i.shape[0]}")
+
+		Gamma_f = self.Gamma_red[:, idx_f]
+		Gamma_e = self.Gamma_red[:, j_exc]
+
+		# -----------------------------------
+		# Partition full matrices
+		# -----------------------------------
+
+		b = 0   # base dof index in full system
+
+		free = self.free_dofs
+
+		Mfb = self.M[:, 0]
+		# Cfb = self.params.c_alpha*self.M[np.ix_(free, [b])] + self.params.c_beta*self.K[np.ix_(free, [b])]
+		# Cfb = np.zeros_like(self.K[:  0])
+		Kfb = self.K[:, 0]
+
+		# -----------------------------------
+		# Damping
+		# -----------------------------------
+
+		if hasattr(self, 'C_red'):
+			D = self.C_red + self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+		else:
+			D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+
+		M_elec = self.params.Cp_scalar * np.eye(len(idx_f))
+
+		M_ODE = np.block([
+			[self.M_red, np.zeros((N, len(idx_f)))],
+			[np.zeros((len(idx_f), N)), M_elec]
+		])
+
+		C_ODE = np.block([
+			[D, -Gamma_f],
+			[Gamma_f.T, (K_p/R_c)*np.eye(len(idx_f))]
+		])
+
+		# -----------------------------------
+		# internal forces
+		# -----------------------------------
+
+		def f_int(x):
+			u = x[:N]
+			qf = x[N:]
+
+			return np.concatenate([
+				self.K_red @ u,
+				(K_i/R_c)*qf + (K_c/R_c)*qf**3
+			])
+
+		def K_tan(x):
+			qf = x[N:]
+
+			Kqq = (np.diag(K_i)/R_c) + (3*K_c/R_c)*np.diag(qf**2)
+
+			return np.block([
+				[self.K_red, np.zeros((N, len(qf)))],
+				[np.zeros((len(qf), N)), Kqq]
+			])
+
+		# -----------------------------------
+		# base forcing term
+		# -----------------------------------
+
+		def base_force(t):
+
+			u = u_base(t)
+
+			if du_base is None:
+				ud = 0.0
+			else:
+				ud = du_base(t)
+
+			if ddu_base is None:
+				udd = 0.0
+			else:
+				udd = ddu_base(t)
+
+			return (
+				- Mfb.flatten()*udd
+				- Cfb.flatten()*ud
+				- Kfb.flatten()*u
+			)
+
+		# -----------------------------------
+		# external force
+		# -----------------------------------
+
+		def f_ext(t):
+
+			if len(j_exc) == 0:
+				piezo_force = np.zeros(N)
+			else:
+				v_t = v_exc(t)
+
+				if np.isscalar(v_t):
+					v_t = np.full(len(j_exc), v_t)
+				else:
+					v_t = np.asarray(v_t)
+					if v_t.shape[0] != len(j_exc):
+						raise ValueError(
+							f"v_exc length mismatch: expected {len(j_exc)}, got {v_t.shape[0]}"
+						)
+
+				piezo_force = Gamma_e @ v_t
+
+			mech_force = piezo_force + base_force(t)
+
+			return np.concatenate([
+				mech_force,
+				np.zeros(len(idx_f))
+			])
+
+		f_ext_freq_domain = f_ext(0.0)
 
 		return PiezoBeamODESystem(
 			M=M_ODE,
@@ -359,11 +534,10 @@ class PiezoBeamFE:
 			K_tan=K_tan,
 			f_ext=f_ext,
 			v_exc=v_exc,
-			f_ext_unit=f_ext_unit,
+			f_ext_freq_domain=f_ext_freq_domain,
 			N_mech=N,
 			N_elec=len(idx_f)
 		)
-
 
 	def build_ode_system_nonlocal(
 			self,
@@ -404,7 +578,11 @@ class PiezoBeamFE:
 		# -----------------------------
 		# Mass and damping matrices
 		# -----------------------------
-		D = self.params.c_alpha * self.M_red + self.params.c_beta * self.K_red
+		if hasattr(self, 'C_red'):
+			D = self.C_red + self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+		else: 
+			D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+			
 		M_elec = self.params.Cp_scalar * np.eye(Nf)
 
 		M_ODE = np.block([
@@ -510,7 +688,7 @@ class PiezoBeamFE:
 				np.zeros(Nf)
 			])
 
-		f_ext_unit = np.concatenate([
+		f_ext_freq_domain = np.concatenate([
 			Gamma_e @ (np.ones(len(j_exc)) * freq_domain_amps),
 			np.zeros(Nf)
 		])
@@ -525,7 +703,7 @@ class PiezoBeamFE:
 			K_tan=K_tan,
 			f_ext=f_ext,
 			v_exc=v_exc,
-			f_ext_unit=f_ext_unit,
+			f_ext_freq_domain=f_ext_freq_domain,
 			N_mech=N,
 			N_elec=Nf
 		)

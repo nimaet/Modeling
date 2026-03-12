@@ -9,6 +9,33 @@ import numpy as np
 import imageio.v2 as imageio
 from tqdm import trange
 
+def apply_dissertation_style():
+    import matplotlib.pyplot as plt
+    plt.rcParams.update({
+        "font.family": "serif",
+        "font.serif": "Times New Roman",
+        "font.size": 11,
+        "axes.titlesize": 13,
+        "axes.labelsize": 12,
+        "axes.titleweight": "bold",
+        "xtick.labelsize": 10,
+        "ytick.labelsize": 10,
+        "legend.fontsize": 10,
+        "legend.frameon": True,
+        "legend.framealpha": 0.9,
+        "lines.linewidth": 2.0,
+        "axes.grid": True,
+        "grid.alpha": 0.3,
+        "grid.linestyle": "--",
+        "figure.dpi": 300,
+        "savefig.dpi": 300,
+        "savefig.bbox": "tight",
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.top": True,
+        "ytick.right": True,
+    })
+	
 def animate_field_1d(
 	t,
 	u,
