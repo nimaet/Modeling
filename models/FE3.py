@@ -420,10 +420,10 @@ class PiezoBeamFE:
 
 		free = self.free_dofs
 
-		Mfb = self.M[:, 0]
+		Mfb = self.M[np.ix_(free, [b])]
 		# Cfb = self.params.c_alpha*self.M[np.ix_(free, [b])] + self.params.c_beta*self.K[np.ix_(free, [b])]
 		# Cfb = np.zeros_like(self.K[:  0])
-		Kfb = self.K[:, 0]
+		Kfb = self.K[np.ix_(free, [b])]
 
 		# -----------------------------------
 		# Damping
@@ -489,8 +489,8 @@ class PiezoBeamFE:
 
 			return (
 				- Mfb.flatten()*udd
-				- Cfb.flatten()*ud
-				- Kfb.flatten()*u
+				# - Cfb.flatten()*ud
+				# - Kfb.flatten()*u
 			)
 
 		# -----------------------------------
