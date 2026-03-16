@@ -8,8 +8,8 @@ from datetime import datetime
 from itertools import product
 from typing import Callable
 import json
-import pickle
-
+import os
+import shutil
 from joblib import Parallel, delayed
 
 # =========================================================
@@ -87,59 +87,61 @@ class SweepSpec:
 
 
 # =========================================================
-# BASE MODEL PARAMETERS (NOT SWEPT)
+# BASE MODEL PARAMETERS
 # =========================================================
 SAVE_PREFIX = "NES"
 sim_dat_dir = Path.cwd() / "sim_dat"
 sim_dat_dir.mkdir(parents=True, exist_ok=True)
-no_cores = 24
+
 params_fe = PiezoBeamParams(
 	hp=0.252e-3,
 	hs=0.51e-3,
 	d31=-1.45e-10,
 	eps_r=1700,
 )
+
 interface_idx = 10
 beta = 0.3
-"""beta = 0.3
-# # ======= K_p sweep in frequency domain =======
 ki0 = 4000
-ki1 = ki0 / (1 - beta)**2 
-ki2 = ki0 / (1 + beta)**2 
-K_i = np.array([ki1, ki2] *(interface_idx//2) + [ki2, ki1] *(15-interface_idx//2) + [ki2])"""
-ki0 = 4000
+
 
 def Ki_builder(beta):
 	ki1 = ki0 / (1 - beta)**2
 	ki2 = ki0 / (1 + beta)**2
-	return np.array([ki1, ki2] * (interface_idx // 2)+ [ki1, ki2] * (15 - interface_idx // 2)+ [ki1])
+	return np.array(
+		[ki1, ki2] * (interface_idx // 2)
+		+ [ki1, ki2] * (15 - interface_idx // 2)
+		+ [ki1]
+	)
+
 
 def Kc_builder(kc):
-	return np.array([-kc, kc] * (interface_idx // 2) + [kc, -kc] * (15 - interface_idx // 2))
+	return np.array(
+		[-kc, kc] * (interface_idx // 2)
+		+ [kc, -kc] * (15 - interface_idx // 2)
+	)
+
 
 BASE_PARAMS = dict(
 	K_p=0.018,
-	K_i=0.001,#Ki_builder(beta),
-	K_c = 3e10,
+	K_i=0.001,
+	K_c=3e10,
 	R_c=1e3,
 )
 
 # =========================================================
 # TIME / EXCITATION
 # =========================================================
-t_end = 2
+t_end = 1
 f0 = 500
 f1 = 3000
 dt = 1 / max(f0, f1) / 50
 
 # =========================================================
-# DEFINE SWEEP (EDIT ONLY THIS BLOCK)
+# DEFINE SWEEP
 # =========================================================
-amp_list = np.array([0.05, 0.15, 0.2, 0.25, 0.26, 0.27, 0.28, 0.29, 0.3, 0.31, 0.33, 0.36, 0.4]) * 125
 amp_list = np.linspace(0.05, 0.4, 3) * 125
-# kc_magnitudes = np.array([  4e10, 6e10, 7e10, 8e10, 9e10, 1e11])
-kc_magnitudes = np.array([    1e10, 3e10 ])
-kc_magnitudes =  np.linspace(3e10, 5e11, 4)
+kc_magnitudes = np.linspace(3e10, 5e11, 4)
 
 sweep_spec = SweepSpec([
 	SweepParam(
@@ -148,56 +150,33 @@ sweep_spec = SweepSpec([
 		description="Excitation amplitude",
 	),
 
-	# SweepParam(
-	# 	key="K_c",
-	# 	values=kc_magnitudes.tolist(),
-	# 	# target="K_c",
-	# 	builder=lambda kc: np.array(
-	# 		[-kc, kc] * (interface_idx // 2)
-	# 		+ [kc, -kc] * (15 - interface_idx // 2)
-	# 	),
-	# 	description="Nonlinear stiffness distribution",
-	# ),
-	# SweepParam(
-	# 	key="beta",
-	# 	values= [0.2, 0.3, 0.4, 0.5, 0.6],
-	# 	builder=Ki_builder,
-	# 	target="K_i",
-	# 	description="linear inductance",
-	# ),
 	SweepParam(
 		key="K_c",
-		values=  kc_magnitudes.tolist() ,
+		values=kc_magnitudes.tolist(),
 		target="K_c",
 		description="nonlinear inductance",
 	),
+
 	SweepParam(
 		key="K_p",
-		values= (np.linspace(0.08, 0.2, 12)).tolist(),
+		values=(np.linspace(0.08, 0.2, 12)).tolist(),
 		target="K_p",
 		description="linear inductance",
 	),
 ])
 
-
 # =========================================================
 # OUTPUT EXTRACTION
 # =========================================================
 OUTPUT_SPEC = {
-	# "freq": lambda out: out["spectral"]["freq"],
-	# "FRF":  lambda out: out["spectral"]["FRF"],
-	# "X":    lambda out: out["spectral"]["X"],
-	# "Y":    lambda out: out["spectral"]["Y"],
-	"t":    lambda out: out["t"],
-	"u_dot":    lambda out: out["u_dot"],
-	"v":    lambda out: out["v"],
+	"t": lambda out: out["t"],
+	"u_dot": lambda out: out["u_dot"],
+	"v": lambda out: out["v"],
 }
 
 # =========================================================
-# FILESYSTEM
+# UTILITIES
 # =========================================================
-
-
 def to_jsonable(obj):
 	if isinstance(obj, dict):
 		return {k: to_jsonable(v) for k, v in obj.items()}
@@ -211,18 +190,6 @@ def to_jsonable(obj):
 		return str(obj)
 	return f'{obj:0.3e}' if isinstance(obj, float) else obj
 
-def unique_dir(path: Path) -> Path:
-	if not path.exists():
-		path.mkdir(parents=True)
-		return path
-
-	i = 1
-	while True:
-		cand = path.with_name(f"{path.name}_{i}")
-		if not cand.exists():
-			cand.mkdir(parents=True)
-			return cand
-		i += 1
 
 # =========================================================
 # BUILD SWEEP GRID
@@ -244,6 +211,7 @@ def run_single_simulation(
 	output_spec,
 	out_dir
 ):
+
 	try:
 		params = sweep_spec.apply(base_params, sweep_entry)
 		amp = params["amp"]
@@ -296,86 +264,117 @@ def run_single_simulation(
 			exception=type(e).__name__
 		)
 
+
 # =========================================================
-# RUN DIRECTORY + CONFIG SAVE
+# SLURM ARRAY INDEX
 # =========================================================
-run_dir = unique_dir(sim_dat_dir / SAVE_PREFIX)
+array_id = int(os.environ.get("SLURM_ARRAY_TASK_ID", 0))
+array_job_id = os.environ.get("SLURM_ARRAY_JOB_ID") or os.environ.get("SLURM_JOB_ID") or "local"
+
+array_task_count = int(
+	os.environ.get("SLURM_ARRAY_TASK_COUNT")
+	or (
+		int(os.environ.get("SLURM_ARRAY_TASK_MAX", array_id))
+		- int(os.environ.get("SLURM_ARRAY_TASK_MIN", 0))
+		+ 1
+	)
+)
+
+print(f"Running array task {array_id} of {array_task_count}")
+
+assigned_indices = list(range(array_id, len(SWEEP_GRID), array_task_count))
+
+if not assigned_indices:
+	print(f"Array task {array_id:05d} has no assigned simulations. Exiting.")
+	raise SystemExit(0)
+
+# =========================================================
+# DIRECTORY SETUP (RUN ONCE)
+# =========================================================
+run_dir = sim_dat_dir / f"{SAVE_PREFIX}_{array_job_id}"
 npz_dir = run_dir / "npz"
-npz_dir.mkdir(parents=True)
+status_dir = run_dir / "status"
 
-CONFIG = {
-	"created_at": datetime.now().isoformat(),
-	"time": dict(dt=dt, t_end=t_end, f0=f0, f1=f1),
-	"sweep_spec": [
-		{
-			"key": p.key,
-			"values": p.values,
-			"target": p.target,
-			"description": p.description,
-		}
-		for p in sweep_spec.params
-	],
-	"fe_params": to_jsonable(vars(params_fe)),
-	"base_params": {
-		k: to_jsonable(v)
-		for k, v in BASE_PARAMS.items()
-	},
-}
+# Use node-local temp storage for heavy intermediate writes, then copy once.
+tmp_root = Path(os.environ.get("SLURM_TMPDIR") or os.environ.get("TMPDIR") or "/tmp")
+task_tmp_dir = tmp_root / f"{SAVE_PREFIX}_{array_job_id}" / f"task_{array_id:05d}"
+task_tmp_dir.mkdir(parents=True, exist_ok=True)
 
-with open(run_dir / "config.json", "w") as f:
-	json.dump(to_jsonable(CONFIG), f, indent=2)
+run_dir.mkdir(parents=True, exist_ok=True)
+npz_dir.mkdir(parents=True, exist_ok=True)
+status_dir.mkdir(parents=True, exist_ok=True)
+
+if array_id == 0:
+
+
+	CONFIG = {
+		"created_at": datetime.now().isoformat(),
+		"time": dict(dt=dt, t_end=t_end, f0=f0, f1=f1),
+		"sweep_spec": [
+			{
+				"key": p.key,
+				"values": p.values,
+				"target": p.target,
+				"description": p.description,
+			}
+			for p in sweep_spec.params
+		],
+		"fe_params": to_jsonable(vars(params_fe)),
+		"base_params": {
+			k: to_jsonable(v)
+			for k, v in BASE_PARAMS.items()
+		},
+	}
+
+	with open(run_dir / "config.json", "w") as f:
+		json.dump(to_jsonable(CONFIG), f, indent=2)
+
 
 # =========================================================
-# RUN SWEEP
+# RUN ASSIGNED CASES (HYBRID: ARRAY + JOBLIB)
 # =========================================================
-results = Parallel(n_jobs=no_cores, verbose=10)(
-	delayed(run_single_simulation)(
-		i, s, BASE_PARAMS,
+def run_and_store(index):
+	sweep_entry = SWEEP_GRID[index]
+	local_dir = task_tmp_dir / f"sim_{index:05d}"
+	local_dir.mkdir(parents=True, exist_ok=True)
+
+	result = run_single_simulation(
+		index,
+		sweep_entry,
+		BASE_PARAMS,
 		params_fe,
 		dt, t_end, f0, f1,
 		OUTPUT_SPEC,
-		npz_dir
+		local_dir
 	)
-	for i, s in enumerate(SWEEP_GRID)
+
+	if result["ok"]:
+		local_npz = local_dir / f"sim_{index:05d}.npz"
+		shared_npz = npz_dir / f"sim_{index:05d}.npz"
+		shutil.copy2(local_npz, shared_npz)
+
+	with open(status_dir / f"result_{index:05d}.json", "w") as f:
+		json.dump(to_jsonable(result), f, indent=2)
+
+	return result
+
+
+n_jobs = max(1, int(os.environ.get("SLURM_CPUS_PER_TASK", "1")))
+n_jobs = min(n_jobs, len(assigned_indices))
+
+print(
+	f"Array task {array_id:05d} processing indices {assigned_indices} "
+	f"with n_jobs={n_jobs}"
 )
 
-# =========================================================
-# COLLECT RESULTS INTO PKL
-# =========================================================
-successful = []
-failed = []
+if n_jobs == 1:
+	results = [run_and_store(i) for i in assigned_indices]
+else:
+	results = Parallel(n_jobs=n_jobs, prefer="processes")(
+		delayed(run_and_store)(i) for i in assigned_indices
+	)
 
-for r in results:
-	if r["ok"]:
-		npz = np.load(npz_dir / f"sim_{r['index']:05d}.npz", allow_pickle=True)
-		sweep_entry = SWEEP_GRID[r["index"]]
-		successful.append({
-			"index": r["index"],
-			"sweep_entry": to_jsonable(sweep_entry),
-			"params": npz["params"].item(),
-			"data": npz["data"].item(),
-		})
-	else:
-		failed.append(r)
-
-PKL_DATA = {
-	"meta": {
-		"run_dir": str(run_dir),
-		"created_at": CONFIG["created_at"],
-	},
-	"sweep": {
-		"keys": sweep_spec.keys,
-		"grid": SWEEP_GRID,
-	},
-	"results": successful,
-	"failed": failed,
-}
-
-with open(run_dir / "results.pkl", "wb") as f:
-	pickle.dump(PKL_DATA, f)
-
-with open(run_dir / "errors.json", "w") as f:
-	json.dump(to_jsonable(failed), f, indent=2)
-
-print(f"Completed: {len(successful)} success, {len(failed)} failed")
-print(f"Saved to: {run_dir}")
+ok_count = sum(1 for r in results if r.get("ok", False))
+fail_count = len(results) - ok_count
+print(f"Array task {array_id:05d} complete. success={ok_count}, failed={fail_count}")
+print(f"Saved task outputs to: {run_dir}")

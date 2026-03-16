@@ -6,9 +6,9 @@
 #SBATCH --cpus-per-task=24
 #SBATCH --mem=192G
 #SBATCH -t120
-#SBATCH -qembers                   # QOS Name
+#SBATCH -q embers                  # QOS Name
 #SBATCH -oReport-%j.out                         # Combined output and error messages file
 
 
 module load anaconda3                # Load module dependencies
-srun python 2D_sweep.py                             # Example Process
+srun python generic_nD_sweep.py                             # Example Process
