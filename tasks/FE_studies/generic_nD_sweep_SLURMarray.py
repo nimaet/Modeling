@@ -140,8 +140,8 @@ dt = 1 / max(f0, f1) / 50
 # =========================================================
 # DEFINE SWEEP
 # =========================================================
-amp_list = np.linspace(0.05, 0.4, 3) * 125
-kc_magnitudes = np.linspace(3e10, 5e11, 4)
+amp_list = np.array([ 0.2, 0.4]) * 125
+kc_magnitudes = np.linspace(6e11, 3e12, 4)
 
 sweep_spec = SweepSpec([
 	SweepParam(
@@ -159,7 +159,7 @@ sweep_spec = SweepSpec([
 
 	SweepParam(
 		key="K_p",
-		values=(np.linspace(0.08, 0.2, 12)).tolist(),
+		values=(np.linspace(0.01, 0.1, 12)).tolist(),
 		target="K_p",
 		description="linear inductance",
 	),

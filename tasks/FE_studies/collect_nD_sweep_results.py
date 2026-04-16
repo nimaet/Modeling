@@ -64,6 +64,12 @@ def parse_args():
         default=Path.cwd() / "sim_dat",
         help="Parent directory containing run folders",
     )
+    parser.add_argument(
+        "--progress-every",
+        type=int,
+        default=1,
+        help="Print progress every N status files processed",
+    )
     return parser.parse_args()
 
 
@@ -106,7 +112,10 @@ def main():
     status_files = sorted(status_dir.glob("result_*.json"))
     seen_indices = set()
 
-    for status_file in status_files:
+    print(f"Collecting run: {run_dir}")
+    print(f"Found {len(status_files)} status files, expected {expected_total} cases")
+
+    for idx, status_file in enumerate(status_files, start=1):
         with open(status_file, "r") as f:
             status = json.load(f)
 
@@ -142,8 +151,16 @@ def main():
             }
         )
 
+        if idx % max(1, args.progress_every) == 0 or idx == len(status_files):
+            print(
+                f"Progress: {idx}/{len(status_files)} status files | "
+                f"success={len(successful)} failed={len(failed)}"
+            )
+
+    missing_count = 0
     for index in range(expected_total):
         if index not in seen_indices:
+            missing_count += 1
             failed.append(
                 {
                     "ok": False,
@@ -152,6 +169,9 @@ def main():
                     "exception": "MissingStatus",
                 }
             )
+
+    if missing_count:
+        print(f"Detected {missing_count} missing status files")
 
     pkl_data = {
         "meta": {
@@ -180,4 +200,5 @@ def main():
 
 
 if __name__ == "__main__":
+    print("Starting nD sweep result collection...")
     main()
