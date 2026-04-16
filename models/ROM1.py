@@ -168,16 +168,21 @@ class ROM:
 		Gamma_f = self.p.theta_mech * self.Gamma[:, idx_f]
 		Gamma_e = self.p.theta_mech * self.Gamma[:, j_exc]
 
-		if np.isscalar(K_i):
-			K_i_eff = K_i * np.ones(len(idx_f))
-		else:
-			K_i_arr = np.asarray(K_i)
-			if K_i_arr.shape[0] == S:
-				K_i_eff = np.delete(K_i_arr, j_exc)
+		def _gain_to_free_patch_vector(K, name):
+			if np.isscalar(K):
+				return float(K) * np.ones(len(idx_f))
+			K_arr = np.asarray(K).reshape(-1)
+			if K_arr.shape[0] == S:
+				K_eff = np.delete(K_arr, j_exc)
 			else:
-				K_i_eff = K_i_arr
-			if len(K_i_eff) != len(idx_f):
-				raise ValueError(f"K_i length mismatch: expected {len(idx_f)}, got {len(K_i_eff)}")
+				K_eff = K_arr
+			if len(K_eff) != len(idx_f):
+				raise ValueError(f"{name} length mismatch: expected {len(idx_f)}, got {len(K_eff)}")
+			return K_eff
+
+		K_p_eff = _gain_to_free_patch_vector(K_p, "K_p")
+		K_i_eff = _gain_to_free_patch_vector(K_i, "K_i")
+		K_c_eff = _gain_to_free_patch_vector(K_c, "K_c")
 
 		M_mech = np.eye(N)
 		K_mech = np.diag(self.omega2)
@@ -191,7 +196,7 @@ class ROM:
 
 		C_ODE = np.block([
 			[D, -Gamma_f],
-			[Gamma_f.T, (K_p/R_c) * np.eye(len(idx_f))]
+			[Gamma_f.T, np.diag(K_p_eff / R_c)]
 		])
 
 		def f_int(x):
@@ -199,12 +204,12 @@ class ROM:
 			qf = x[N:]
 			return np.concatenate([
 				K_mech @ u,
-				(K_i_eff/R_c) * qf + (K_c/R_c) * qf**3
+				(K_i_eff / R_c) * qf + (K_c_eff / R_c) * qf**3
 			])
 
 		def K_tan(x):
 			qf = x[N:]
-			Kqq = (np.diag(K_i_eff)/R_c) + (3*K_c/R_c) * np.diag(qf**2)
+			Kqq = np.diag((K_i_eff / R_c) + (3 * K_c_eff / R_c) * (qf**2))
 			return np.block([
 				[K_mech, np.zeros((N, len(qf)))],
 				[np.zeros((len(qf), N)), Kqq]
@@ -273,16 +278,21 @@ class ROM:
 		Gamma_f = self.p.theta_mech * self.Gamma[:, idx_f]
 		Gamma_e = self.p.theta_mech * self.Gamma[:, j_exc] if len(j_exc) else np.zeros((N, 0))
 
-		if np.isscalar(K_i):
-			K_i_eff = K_i * np.ones(len(idx_f))
-		else:
-			K_i_arr = np.asarray(K_i)
-			if K_i_arr.shape[0] == S:
-				K_i_eff = np.delete(K_i_arr, j_exc)
+		def _gain_to_free_patch_vector(K, name):
+			if np.isscalar(K):
+				return float(K) * np.ones(len(idx_f))
+			K_arr = np.asarray(K).reshape(-1)
+			if K_arr.shape[0] == S:
+				K_eff = np.delete(K_arr, j_exc)
 			else:
-				K_i_eff = K_i_arr
-			if len(K_i_eff) != len(idx_f):
-				raise ValueError(f"K_i length mismatch: expected {len(idx_f)}, got {len(K_i_eff)}")
+				K_eff = K_arr
+			if len(K_eff) != len(idx_f):
+				raise ValueError(f"{name} length mismatch: expected {len(idx_f)}, got {len(K_eff)}")
+			return K_eff
+
+		K_p_eff = _gain_to_free_patch_vector(K_p, "K_p")
+		K_i_eff = _gain_to_free_patch_vector(K_i, "K_i")
+		K_c_eff = _gain_to_free_patch_vector(K_c, "K_c")
 
 		M_mech = np.eye(N)
 		K_mech = np.diag(self.omega2)
@@ -296,7 +306,7 @@ class ROM:
 
 		C_ODE = np.block([
 			[D, -Gamma_f],
-			[Gamma_f.T, (K_p/R_c) * np.eye(len(idx_f))]
+			[Gamma_f.T, np.diag(K_p_eff / R_c)]
 		])
 
 		def f_int(x):
@@ -304,12 +314,12 @@ class ROM:
 			qf = x[N:]
 			return np.concatenate([
 				K_mech @ u,
-				(K_i_eff/R_c) * qf + (K_c/R_c) * qf**3
+				(K_i_eff / R_c) * qf + (K_c_eff / R_c) * qf**3
 			])
 
 		def K_tan(x):
 			qf = x[N:]
-			Kqq = (np.diag(K_i_eff)/R_c) + (3*K_c/R_c) * np.diag(qf**2)
+			Kqq = np.diag((K_i_eff / R_c) + (3 * K_c_eff / R_c) * (qf**2))
 			return np.block([
 				[K_mech, np.zeros((N, len(qf)))],
 				[np.zeros((len(qf), N)), Kqq]
