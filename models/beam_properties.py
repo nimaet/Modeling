@@ -280,3 +280,37 @@ class PiezoBeamParams:
 			'w0': float(w0),
 			'theta_tilde': float(theta_tilde)
 		}
+	
+def compute_EI_and_rhoA(E_layers, rho_layers, h_layers, b_layers):
+    """
+    Compute bending stiffness EI and mass per unit length rhoA
+    for a symmetric layered beam section.
+
+    Layer convention:
+    - layer 0 is the center/mid-layer, mirrored about y=0
+    - layers 1, 2, ... are stacked outward symmetrically
+    """
+    E_layers = np.asarray(E_layers, dtype=float)
+    rho_layers = np.asarray(rho_layers, dtype=float)
+    h_layers = np.asarray(h_layers, dtype=float)
+    b_layers = np.asarray(b_layers, dtype=float)
+
+    assert len(E_layers) == len(rho_layers) == len(h_layers) == len(b_layers)
+
+    # y[i] is the outer coordinate of layer i on the positive-y side.
+    y = [h_layers[0] / 2.0]
+    for i in range(1, len(h_layers)):
+        y.append(y[i-1] + h_layers[i])
+
+    EI_half = 0.0
+    rhoA_half = 0.0
+
+    for i, (E, rho, h, b) in enumerate(zip(E_layers, rho_layers, h_layers, b_layers)):
+        if i == 0:
+            EI_half += E * b * y[i]**3 / 3.0
+            rhoA_half += rho * b * h / 2.0
+        else:
+            EI_half += E * b * (y[i]**3 - y[i-1]**3) / 3.0
+            rhoA_half += rho * b * h
+
+    return 2.0 * EI_half, 2.0 * rhoA_half
