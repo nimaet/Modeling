@@ -98,7 +98,7 @@ def plot_all_binary_bar(all_results: list[dict], ax=None, metric_key: str = "sco
     For dense FRF results, use a scalar key or precompute one first.
     """
     if all_results is None:
-        raise ValueError("all_results is None. For binary mode, pass a mode_result['all_phase_results'] or best['inner']['all_phase_results'] for single-mode cases.")
+        raise ValueError("all_results is None. For binary mode, pass best['inner']['all_phase_results'].")
     if ax is None:
         fig, ax = plt.subplots(figsize=(8, 4))
     else:
@@ -131,9 +131,6 @@ def plot_patch_phases(layout: dict, phase_deg=None, phase_rad=None, voltage_vect
     wrapped to [0, 360). For binary phases, bars will be at 0 or 180 degrees.
     """
     phase = _phase_deg_from_inputs(phase_deg=phase_deg, phase_rad=phase_rad, voltage_vector=voltage_vector)
-    if phase.ndim != 1:
-        raise ValueError("plot_patch_phases expects a 1D phase vector. For multi-mode results, use plot_multimode_phase_matrix or pass one mode_result's phase vector.")
-
     xL = np.asarray(layout["xL"], dtype=float)
     xR = np.asarray(layout["xR"], dtype=float)
     centers = 0.5 * (xL + xR)
@@ -170,8 +167,6 @@ def plot_phase_phasors(phase_deg=None, phase_rad=None, voltage_vector=None, ax=N
         radius = np.abs(v)
     else:
         phase = _phase_deg_from_inputs(phase_deg=phase_deg, phase_rad=phase_rad)
-        if phase.ndim != 1:
-            raise ValueError("plot_phase_phasors expects a 1D phase vector. For multi-mode results, pass one mode_result's voltage_vector.")
         theta = np.deg2rad(phase)
         radius = np.ones_like(theta)
 
@@ -186,75 +181,6 @@ def plot_phase_phasors(phase_deg=None, phase_rad=None, voltage_vector=None, ax=N
             ax.text(th, r * 1.08, f"P{j + 1}", ha="center", va="center")
     ax.set_title("Patch voltage phasors")
     ax.legend(loc="best", bbox_to_anchor=(1.1, 1.1), fontsize=8)
-    fig.tight_layout()
-    return fig, ax
-
-
-def plot_multimode_phase_matrix(inner: dict, ax=None, relative: bool = True, annotate: bool = True):
-    """Visualize optimized phase of each patch for each target mode.
-
-    Works with a multi-mode ``best['inner']`` dictionary from the optimizer. Rows
-    are modes and columns are patches.
-    """
-    if inner.get("objective") != "multi_mode":
-        # Single-mode fallback: show one row.
-        phase = np.asarray(inner["relative_phase_deg" if relative else "phase_deg"], dtype=float)[None, :]
-        mode_numbers = [inner.get("target_mode_number", inner.get("single_mode_number", 1))]
-    else:
-        key = "relative_phase_deg" if relative else "phase_deg"
-        phase = np.vstack([np.asarray(v, dtype=float) for v in inner[key]])
-        mode_numbers = list(inner["multi_mode_numbers"])
-
-    phase = phase % 360.0
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(max(6, 1.2 * phase.shape[1]), max(2.5, 0.6 * phase.shape[0] + 1.5)))
-    else:
-        fig = ax.get_figure()
-
-    im = ax.imshow(phase, aspect="auto", vmin=0, vmax=360)
-    cbar = fig.colorbar(im, ax=ax)
-    cbar.set_label("Phase [deg]")
-    ax.set_xticks(np.arange(phase.shape[1]))
-    ax.set_xticklabels([f"P{j + 1}" for j in range(phase.shape[1])])
-    ax.set_yticks(np.arange(phase.shape[0]))
-    ax.set_yticklabels([f"Mode {m}" for m in mode_numbers])
-    ax.set_xlabel("Patch")
-    ax.set_ylabel("Target mode")
-    ax.set_title("Optimized patch phases" + (" (relative)" if relative else ""))
-
-    if annotate:
-        for i in range(phase.shape[0]):
-            for j in range(phase.shape[1]):
-                ax.text(j, i, f"{phase[i, j]:.0f}°", ha="center", va="center", fontsize=9)
-
-    fig.tight_layout()
-    return fig, ax
-
-
-def plot_multimode_score_bar(inner: dict, ax=None):
-    """Bar plot of raw and weighted per-mode scores for a multi-mode objective."""
-    if inner.get("objective") != "multi_mode":
-        raise ValueError("plot_multimode_score_bar requires a multi-mode inner result")
-
-    modes = list(inner["multi_mode_numbers"])
-    raw = np.asarray(inner["raw_mode_scores"], dtype=float)
-    weighted = np.asarray(inner["weighted_mode_scores"], dtype=float)
-    x = np.arange(len(modes))
-    width = 0.38
-
-    if ax is None:
-        fig, ax = plt.subplots(figsize=(8, 4))
-    else:
-        fig = ax.get_figure()
-
-    ax.bar(x - width / 2, raw, width, label="raw")
-    ax.bar(x + width / 2, weighted, width, label="weighted/normalized")
-    ax.set_xticks(x)
-    ax.set_xticklabels([f"Mode {m}" for m in modes])
-    ax.set_ylabel("Score contribution")
-    ax.set_title(f"Multi-mode score = {inner['score']:.3e}")
-    ax.grid(True, axis="y", alpha=0.3)
-    ax.legend(loc="best")
     fig.tight_layout()
     return fig, ax
 

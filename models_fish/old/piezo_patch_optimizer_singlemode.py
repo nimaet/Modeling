@@ -1,23 +1,13 @@
 """Patch-placement optimizer for 1D piezoelectric beam FE models.
 
-Version 3 / multimode refactor
------------------------------
-This module keeps notebooks thin: configure settings, call
+Version 2 additions:
+- cleaner experiment-loop support via external runner helpers
+- arbitrary patch counts through GeometrySettings.Np
+- binary and continuous phase optimization
+- output metrics: tip, line-average displacement, RMS displacement
+
+The optimizer intentionally keeps notebooks thin: configure settings, call
 ``PiezoPatchOptimizer.run()``, then plot/post-process results.
-
-Supported objective kinds
-- ``single_mode``: optimize one selected natural frequency/mode.
-- ``multi_mode``: optimize a weighted aggregate of several modes. By default,
-  each mode gets its own best phase vector for the same geometry. This answers:
-  "Can one geometry actuate several target modes well if I can retune phase per
-  mode?"
-- ``traveling_wave``: placeholder for a future spatial/phase-propagation
-  objective.
-
-Supported output metrics
-- ``tip``: tip displacement magnitude.
-- ``mean_abs`` / ``line_average``: line-average of |w(x)|.
-- ``rms``: RMS of |w(x)|.
 """
 
 from __future__ import annotations
@@ -25,7 +15,7 @@ from __future__ import annotations
 import copy
 import itertools
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, Dict, List, Optional, Tuple
 
 import numpy as np
 from scipy.optimize import OptimizeResult, differential_evolution, minimize
@@ -37,12 +27,12 @@ try:  # package imports
 except Exception:  # local / notebook fallback
     try:
         from beam_properties import PiezoBeamParams
-    except Exception:  # support previous exported name
+    except Exception:
         from beam_properties_refactored import PiezoBeamParams
     try:
-        import FE3 as FE_module
-    except Exception:
         import FE3_refactored as FE_module
+    except Exception:
+        import FE3 as FE_module
 
 
 # -----------------------------------------------------------------------------
@@ -61,7 +51,7 @@ class GeometrySettings:
     Np: int = 3
     patch_length_bounds: Tuple[float, float] = (10e-3, 40e-3)
     gap_bounds: Tuple[float, float] = (4e-3, 80e-3)
-    tip_substrate_bounds: Tuple[float, Optional[float]] = (0.0, 150e-3)
+    tip_substrate_bounds: Tuple[float, float] = (0.0, 150e-3)
     total_patch_length_bounds: Optional[Tuple[float, float]] = None
     fixed_patch_lengths: Dict[int, float] = field(default_factory=dict)  # patch index j = 0..Np-1
     fixed_gaps: Dict[int, float] = field(default_factory=dict)           # gap index j = 0..Np-2
@@ -69,47 +59,8 @@ class GeometrySettings:
 
 
 @dataclass
-class ObjectiveSettings:
-    """Objective and inner phase-optimization settings.
-
-    Parameters
-    ----------
-    objective:
-        ``"single_mode"``, ``"multi_mode"``, or ``"traveling_wave"``.
-    target_mode_number:
-        Backward-compatible alias for ``single_mode_number``. If supplied, it
-        overrides ``single_mode_number``.
-    single_mode_number:
-        Mode number used for ``objective="single_mode"``. Uses 1-based indexing.
-    multi_mode_numbers:
-        Mode numbers used for ``objective="multi_mode"``. Uses 1-based indexing.
-    multi_mode_weights:
-        Optional per-mode weights. If omitted, all modes get equal weight.
-    multi_mode_score_normalizers:
-        Optional per-mode positive normalizers. Useful when one mode naturally
-        has a much larger response. If omitted, no normalization is applied.
-    multi_mode_reduction:
-        ``"weighted_sum"``/``"sum"``, ``"weighted_mean"``/``"mean"``,
-        ``"min"``, or ``"geometric_mean"``.
-    multi_mode_phase_policy:
-        Currently only ``"per_mode"`` is implemented. This optimizes phase
-        independently for each mode while sharing the same geometry.
-    """
-
-    objective: str = "single_mode"
-
-    # Backward-compatible alias used by earlier notebooks/runners.
-    target_mode_number: Optional[int] = None
-    single_mode_number: int = 1
-    multi_mode_numbers: Sequence[int] = field(default_factory=lambda: (1, 2, 3))
-    multi_mode_weights: Optional[Sequence[float]] = None
-    multi_mode_score_normalizers: Optional[Sequence[float]] = None
-    multi_mode_reduction: str = "weighted_sum"
-    multi_mode_phase_policy: str = "per_mode"
-
-    # Future placeholder.
-    traveling_wave_settings: Dict[str, Any] = field(default_factory=dict)
-
+class SingleModeSettings:
+    target_mode_number: int = 1
     voltage_amplitude: float = 1.0
     phase_mode: str = "binary"  # "binary" or "continuous"
 
@@ -129,36 +80,6 @@ class ObjectiveSettings:
     continuous_phase_seed: Optional[int] = 1
     continuous_phase_method: str = "L-BFGS-B"
 
-    def __post_init__(self):
-        if self.target_mode_number is not None:
-            self.single_mode_number = int(self.target_mode_number)
-
-        self.objective = canonical_objective_name(self.objective)
-        self.phase_mode = self.phase_mode.lower().strip()
-        self.output = canonical_output_name(self.output)
-
-        self.single_mode_number = int(self.single_mode_number)
-        self.multi_mode_numbers = tuple(int(m) for m in self.multi_mode_numbers)
-
-        if self.multi_mode_weights is not None:
-            self.multi_mode_weights = tuple(float(w) for w in self.multi_mode_weights)
-            if len(self.multi_mode_weights) != len(self.multi_mode_numbers):
-                raise ValueError("multi_mode_weights must have the same length as multi_mode_numbers")
-
-        if self.multi_mode_score_normalizers is not None:
-            self.multi_mode_score_normalizers = tuple(float(v) for v in self.multi_mode_score_normalizers)
-            if len(self.multi_mode_score_normalizers) != len(self.multi_mode_numbers):
-                raise ValueError("multi_mode_score_normalizers must have the same length as multi_mode_numbers")
-            if np.any(np.asarray(self.multi_mode_score_normalizers) <= 0):
-                raise ValueError("multi_mode_score_normalizers must be positive")
-
-        if self.multi_mode_phase_policy.lower().strip() != "per_mode":
-            raise NotImplementedError("Only multi_mode_phase_policy='per_mode' is implemented for now")
-
-
-# Backward-compatible name used by older notebooks.
-SingleModeSettings = ObjectiveSettings
-
 
 @dataclass
 class CircuitSettings:
@@ -175,8 +96,7 @@ class OptimizerSettings:
     popsize: int = 8
     seed: Optional[int] = 1
     polish: bool = False
-    # Integer per scipy, or a map-like callable such as ThreadPool.map.
-    workers: Any = 1
+    workers: int = 1
     n_random_samples: int = 300
     powell_maxiter: int = 80
     powell_xtol: float = 1e-4
@@ -187,25 +107,6 @@ class OptimizerSettings:
 # -----------------------------------------------------------------------------
 # Basic helpers
 # -----------------------------------------------------------------------------
-
-def canonical_objective_name(objective: str) -> str:
-    name = objective.lower().strip().replace("-", "_")
-    aliases = {
-        "single": "single_mode",
-        "single_mode": "single_mode",
-        "mode": "single_mode",
-        "multi": "multi_mode",
-        "multimode": "multi_mode",
-        "multi_mode": "multi_mode",
-        "traveling": "traveling_wave",
-        "travelling": "traveling_wave",
-        "traveling_wave": "traveling_wave",
-        "travelling_wave": "traveling_wave",
-    }
-    if name not in aliases:
-        raise ValueError("objective must be 'single_mode', 'multi_mode', or 'traveling_wave'")
-    return aliases[name]
-
 
 def sign_label(signs) -> str:
     return "".join("+" if s > 0 else "-" for s in np.asarray(signs))
@@ -230,18 +131,6 @@ def relative_phase_rad(phase_rad: np.ndarray, reference_index: int = 0) -> np.nd
     """Return phases relative to one patch, wrapped to [0, 2*pi)."""
     phase_rad = np.asarray(phase_rad, dtype=float)
     return wrap_phase_rad(phase_rad - phase_rad[reference_index])
-
-
-def _copy_array_or_value(value):
-    if isinstance(value, np.ndarray):
-        return value.copy()
-    if isinstance(value, list):
-        return [_copy_array_or_value(v) for v in value]
-    if isinstance(value, tuple):
-        return tuple(_copy_array_or_value(v) for v in value)
-    if isinstance(value, dict):
-        return {k: _copy_array_or_value(v) for k, v in value.items()}
-    return value
 
 
 # -----------------------------------------------------------------------------
@@ -301,7 +190,9 @@ def canonical_output_name(output: str) -> str:
         "rms_displacement": "rms",
     }
     if output not in aliases:
-        raise ValueError("Unknown output metric. Use 'tip', 'mean_abs'/'line_average', or 'rms'.")
+        raise ValueError(
+            "Unknown output metric. Use 'tip', 'mean_abs'/'line_average', or 'rms'."
+        )
     return aliases[output]
 
 
@@ -343,13 +234,12 @@ def evaluate_output_metric(fe, u_red: np.ndarray, output: str = "tip") -> float:
 
 def response_summary(fe, u_red: np.ndarray, output: str) -> dict:
     """Return common response metrics for a reduced displacement vector."""
-    output = canonical_output_name(output)
     return {
         "tip": evaluate_output_metric(fe, u_red, "tip"),
         "mean_abs": evaluate_output_metric(fe, u_red, "mean_abs"),
         "rms": evaluate_output_metric(fe, u_red, "rms"),
         "selected": evaluate_output_metric(fe, u_red, output),
-        "output": output,
+        "output": canonical_output_name(output),
     }
 
 
@@ -381,19 +271,15 @@ def optimize_binary_phases_general(
         voltage_vector = voltage_amplitude * signs.astype(complex)
         u_red = U_cols @ voltage_vector
         score = evaluate_output_metric(fe, u_red, output)
-        phase_rad = np.where(signs > 0, 0.0, np.pi)
         record = {
             "signs": signs,
-            "phase_rad": phase_rad,
-            "phase_deg": np.rad2deg(phase_rad),
-            "relative_phase_rad": relative_phase_rad(phase_rad),
-            "relative_phase_deg": np.rad2deg(relative_phase_rad(phase_rad)),
+            "phase_rad": np.where(signs > 0, 0.0, np.pi),
+            "phase_deg": np.where(signs > 0, 0.0, 180.0),
             "voltage_vector": voltage_vector,
-            "response": u_red[tip_reduced_index(fe)],
             "response_red": u_red,
             "score": float(score),
             "label": sign_label(signs),
-            "response_metrics": response_summary(fe, u_red, output),
+            **response_summary(fe, u_red, output),
         }
         all_results.append(record)
         if score > best_score:
@@ -405,7 +291,6 @@ def optimize_binary_phases_general(
     best_voltage_vector = voltage_amplitude * best_signs.astype(complex)
     return {
         "phase_mode": "binary",
-        "phase_optimizer": "brute_force_binary",
         "score": float(best_score),
         "response": best_response_red[tip_reduced_index(fe)],  # backward-compatible scalar tip response
         "response_red": best_response_red,
@@ -427,8 +312,9 @@ def optimize_continuous_phases_tip(
 ) -> dict:
     """Analytic continuous phase alignment for scalar tip displacement."""
     h = np.asarray(U_cols[tip_reduced_index(fe), :], dtype=complex)
-    # A global phase does not change response magnitude. Use patch 1 as reference.
-    phase_rad = relative_phase_rad(-np.angle(h), reference_index=0)
+    phase_rad = -np.angle(h)
+    # Normalize to relative phases. Global phase does not change displacement magnitudes.
+    phase_rad = relative_phase_rad(phase_rad, reference_index=0)
     voltage_vector = voltage_amplitude * np.exp(1j * phase_rad)
     u_red = U_cols @ voltage_vector
     return {
@@ -498,7 +384,7 @@ def optimize_continuous_phases_metric(
         u_red = U_cols @ make_voltage(alpha_free)
         return -evaluate_output_metric(fe, u_red, output)
 
-    starts: List[np.ndarray] = [np.zeros(n - 1)]
+    starts = [np.zeros(n - 1)]
 
     # Include binary-like initial guesses; often good for beam modes.
     for signs_tuple in itertools.product([0.0, np.pi], repeat=n - 1):
@@ -537,63 +423,6 @@ def optimize_continuous_phases_metric(
     }
 
 
-def reduce_multimode_scores(
-    raw_scores: Sequence[float],
-    *,
-    weights: Optional[Sequence[float]] = None,
-    normalizers: Optional[Sequence[float]] = None,
-    reduction: str = "weighted_sum",
-) -> dict:
-    """Combine per-mode scores into one scalar objective."""
-    raw = np.asarray(raw_scores, dtype=float)
-    if raw.ndim != 1 or raw.size == 0:
-        raise ValueError("raw_scores must be a nonempty 1D sequence")
-
-    if weights is None:
-        w = np.ones_like(raw)
-    else:
-        w = np.asarray(weights, dtype=float)
-        if w.shape != raw.shape:
-            raise ValueError("weights must have the same length as raw_scores")
-
-    if normalizers is None:
-        norm = np.ones_like(raw)
-    else:
-        norm = np.asarray(normalizers, dtype=float)
-        if norm.shape != raw.shape:
-            raise ValueError("normalizers must have the same length as raw_scores")
-        if np.any(norm <= 0):
-            raise ValueError("normalizers must be positive")
-
-    normalized = raw / norm
-    weighted = w * normalized
-    name = reduction.lower().strip().replace("-", "_")
-
-    if name in ("weighted_sum", "sum"):
-        score = float(np.sum(weighted))
-    elif name in ("weighted_mean", "mean", "average"):
-        denom = float(np.sum(np.abs(w)))
-        score = float(np.sum(weighted) / denom) if denom > 0 else float(np.mean(normalized))
-    elif name in ("min", "maximin"):
-        score = float(np.min(weighted))
-    elif name in ("geometric_mean", "geom", "geom_mean"):
-        eps = 1e-300
-        vals = np.maximum(weighted, eps)
-        score = float(np.exp(np.mean(np.log(vals))))
-    else:
-        raise ValueError("multi_mode_reduction must be weighted_sum, weighted_mean, min, or geometric_mean")
-
-    return {
-        "score": score,
-        "raw_scores": raw,
-        "weights": w,
-        "normalizers": norm,
-        "normalized_scores": normalized,
-        "weighted_scores": weighted,
-        "reduction": name,
-    }
-
-
 # -----------------------------------------------------------------------------
 # Main optimizer
 # -----------------------------------------------------------------------------
@@ -607,35 +436,23 @@ class PiezoPatchOptimizer:
         region_types: dict,
         base_params: PiezoBeamParams,
         geometry_settings: GeometrySettings,
-        objective_settings: Optional[ObjectiveSettings] = None,
+        mode_settings: SingleModeSettings,
         circuit_settings: Optional[CircuitSettings] = None,
         optimizer_settings: Optional[OptimizerSettings] = None,
         *,
-        mode_settings: Optional[ObjectiveSettings] = None,
         fe_module=FE_module,
         default_h: float = 1e-3,
     ):
-        # ``mode_settings`` is retained for backward compatibility with older notebooks.
-        if objective_settings is None:
-            objective_settings = mode_settings
-        if objective_settings is None:
-            objective_settings = ObjectiveSettings()
-
         self.L = float(L)
         self.region_types = region_types
         self.base_params = base_params
         self.geometry_settings = geometry_settings
-        self.objective_settings = objective_settings
+        self.mode_settings = mode_settings
         self.circuit_settings = circuit_settings or CircuitSettings()
         self.optimizer_settings = optimizer_settings or OptimizerSettings()
         self.fe_module = fe_module
         self.default_h = default_h
         self.evaluation_history: list[dict] = []
-
-    @property
-    def mode_settings(self) -> ObjectiveSettings:
-        """Backward-compatible alias for earlier code."""
-        return self.objective_settings
 
     @property
     def n_patches(self) -> int:
@@ -712,7 +529,6 @@ class PiezoPatchOptimizer:
             penalty += gs.invalid_penalty
 
         tip_min, tip_max = gs.tip_substrate_bounds
-        tip_max = self.L if tip_max is None else tip_max
         tip = layout["tip_substrate"]
         if tip < tip_min:
             penalty += gs.invalid_penalty + gs.invalid_penalty * (tip_min - tip) ** 2
@@ -759,31 +575,30 @@ class PiezoPatchOptimizer:
             layout["error"] = repr(exc)
             return None, layout, self.geometry_settings.invalid_penalty
 
-    def effective_damping_matrix(self, fe) -> np.ndarray:
-        if hasattr(fe, "effective_damping_matrix"):
-            return fe.effective_damping_matrix()
-        return fe.C_red + fe.params.c_alpha * fe.M_red + fe.params.c_beta * fe.K_red
-
     def response_columns(self, fe, omega: float) -> np.ndarray:
         """Return reduced displacement columns per unit patch voltage at omega."""
-        D = self.effective_damping_matrix(fe)
+        D = fe.effective_damping_matrix() if hasattr(fe, "effective_damping_matrix") else fe.C_red + fe.params.c_alpha * fe.M_red + fe.params.c_beta * fe.K_red
         Z = fe.K_red + 1j * omega * D - omega**2 * fe.M_red
         return np.linalg.solve(Z, fe.Gamma_red)
 
     def unit_patch_response(self, fe, omega: float, output: Optional[str] = None) -> np.ndarray:
-        """Backward-compatible scalar unit-patch response vector for tip output."""
-        output = canonical_output_name(output or self.objective_settings.output)
+        """Backward-compatible scalar unit-patch response vector for tip output.
+
+        For non-tip outputs, use response_columns() because the metric is based
+        on the full displacement field.
+        """
+        output = canonical_output_name(output or self.mode_settings.output)
         U_cols = self.response_columns(fe, omega)
         if output != "tip":
             raise ValueError("unit_patch_response is only meaningful for scalar tip output; use response_columns instead")
         return U_cols[tip_reduced_index(fe), :]
 
-    def _evaluate_one_mode(self, fe, mode_number: int) -> dict:
-        """Evaluate one mode and run the selected phase optimizer."""
-        ms = self.objective_settings
-        m = int(mode_number)
+    def evaluate_at_natural_frequency(self, fe) -> dict:
+        """Evaluate selected mode at its geometry-dependent natural frequency."""
+        ms = self.mode_settings
+        m = int(ms.target_mode_number)
         if m < 1 or m > len(fe.freq):
-            raise ValueError(f"mode_number={m} outside available mode range 1..{len(fe.freq)}")
+            raise ValueError(f"target_mode_number={m} outside available mode range 1..{len(fe.freq)}")
 
         omega = float(fe.omega[m - 1])
         freq_hz = float(fe.freq[m - 1])
@@ -791,7 +606,7 @@ class PiezoPatchOptimizer:
         U_cols = self.response_columns(fe, omega)
         h_tip = U_cols[tip_reduced_index(fe), :]
 
-        phase_mode = ms.phase_mode.lower().strip()
+        phase_mode = ms.phase_mode.lower()
         if phase_mode == "binary":
             phase_result = optimize_binary_phases_general(fe, U_cols, output, ms.voltage_amplitude)
         elif phase_mode == "continuous" and output == "tip":
@@ -810,7 +625,6 @@ class PiezoPatchOptimizer:
             raise ValueError("phase_mode must be 'binary' or 'continuous'")
 
         return {
-            "mode_number": m,
             "target_mode_number": m,
             "omega": omega,
             "freq_hz": freq_hz,
@@ -822,125 +636,30 @@ class PiezoPatchOptimizer:
             **phase_result,
         }
 
-    def _evaluate_single_mode_objective(self, fe) -> dict:
-        ms = self.objective_settings
-        mode_result = self._evaluate_one_mode(fe, int(ms.single_mode_number))
-        return {
-            "objective": "single_mode",
-            "target_mode_number": mode_result["mode_number"],
-            "single_mode_number": mode_result["mode_number"],
-            "mode_results": [mode_result],
-            **mode_result,
-        }
-
-    def _evaluate_multi_mode_objective(self, fe) -> dict:
-        ms = self.objective_settings
-        modes = tuple(int(m) for m in ms.multi_mode_numbers)
-        if len(modes) == 0:
-            raise ValueError("multi_mode_numbers must contain at least one mode")
-
-        mode_results = [self._evaluate_one_mode(fe, m) for m in modes]
-        raw_scores = np.asarray([r["score"] for r in mode_results], dtype=float)
-        reduction = reduce_multimode_scores(
-            raw_scores,
-            weights=ms.multi_mode_weights,
-            normalizers=ms.multi_mode_score_normalizers,
-            reduction=ms.multi_mode_reduction,
-        )
-        output = canonical_output_name(ms.output)
-
-        # Store lists rather than ragged arrays for easy downstream access.
-        phase_deg = [r["phase_deg"] for r in mode_results]
-        relative_phase_deg = [r["relative_phase_deg"] for r in mode_results]
-        voltage_vectors = [r["voltage_vector"] for r in mode_results]
-
-        return {
-            "objective": "multi_mode",
-            "multi_mode_numbers": modes,
-            "target_mode_number": modes,  # compatibility: this is now a tuple
-            "single_mode_number": None,
-            "mode_results": mode_results,
-            "score": float(reduction["score"]),
-            "raw_mode_scores": reduction["raw_scores"],
-            "normalized_mode_scores": reduction["normalized_scores"],
-            "weighted_mode_scores": reduction["weighted_scores"],
-            "multi_mode_weights": reduction["weights"],
-            "multi_mode_score_normalizers": reduction["normalizers"],
-            "multi_mode_reduction": reduction["reduction"],
-            "phase_mode": ms.phase_mode,
-            "phase_optimizer": "per_mode",
-            "output": output,
-            "metric_label": f"Multi-mode {reduction['reduction']} of {metric_label(output)}",
-            "freq_hz": np.asarray([r["freq_hz"] for r in mode_results], dtype=float),
-            "omega": np.asarray([r["omega"] for r in mode_results], dtype=float),
-            "phase_deg": phase_deg,
-            "relative_phase_deg": relative_phase_deg,
-            "phase_rad": [r["phase_rad"] for r in mode_results],
-            "relative_phase_rad": [r["relative_phase_rad"] for r in mode_results],
-            "voltage_vector": voltage_vectors,
-            "signs": [r.get("signs", None) for r in mode_results],
-            "response": [r["response"] for r in mode_results],
-            "response_red": [r["response_red"] for r in mode_results],
-            "response_metrics": {
-                "per_mode": [r["response_metrics"] for r in mode_results],
-                "selected": float(reduction["score"]),
-                "output": output,
-            },
-            "all_phase_results": [r.get("all_phase_results", None) for r in mode_results],
-        }
-
-    def _evaluate_traveling_wave_objective(self, fe) -> dict:
-        raise NotImplementedError(
-            "objective='traveling_wave' is reserved for a future traveling-wave objective. "
-            "Add the spatial/temporal wave metric here when ready."
-        )
-
-    def inner_optimizer(self, fe) -> dict:
-        """Evaluate the configured objective for a built FE model."""
-        objective = canonical_objective_name(self.objective_settings.objective)
-        if objective == "single_mode":
-            return self._evaluate_single_mode_objective(fe)
-        if objective == "multi_mode":
-            return self._evaluate_multi_mode_objective(fe)
-        if objective == "traveling_wave":
-            return self._evaluate_traveling_wave_objective(fe)
-        raise RuntimeError(f"Unhandled objective {objective}")
-
-    def evaluate_at_natural_frequency(self, fe) -> dict:
-        """Backward-compatible alias for the inner objective evaluation."""
-        return self.inner_optimizer(fe)
-
     def objective(self, z: np.ndarray) -> float:
         fe, layout, penalty = self.build_fe_for_design(z)
         if penalty > 0 or fe is None:
             return float(penalty)
 
         try:
-            inner = self.inner_optimizer(fe)
+            inner = self.evaluate_at_natural_frequency(fe)
             score = float(inner["score"])
         except Exception as exc:
-            self.evaluation_history.append({
-                "z": np.asarray(z, dtype=float).copy(),
-                "layout": layout,
-                "score": -np.inf,
-                "error": repr(exc),
-            })
+            self.evaluation_history.append({"z": np.asarray(z, dtype=float).copy(), "layout": layout, "score": -np.inf, "error": repr(exc)})
             return self.geometry_settings.invalid_penalty
 
         self.evaluation_history.append(
             {
                 "z": np.asarray(z, dtype=float).copy(),
-                "layout": _copy_array_or_value(layout),
+                "layout": layout,
                 "score": score,
-                "objective": inner.get("objective"),
-                "output": inner.get("output"),
-                "freq_hz": _copy_array_or_value(inner.get("freq_hz")),
-                "phase_mode": inner.get("phase_mode"),
-                "phase_deg": _copy_array_or_value(inner.get("phase_deg")),
-                "relative_phase_deg": _copy_array_or_value(inner.get("relative_phase_deg")),
+                "output": inner["output"],
+                "freq_hz": float(inner["freq_hz"]),
+                "phase_mode": inner["phase_mode"],
+                "phase_deg": np.asarray(inner["phase_deg"]).copy(),
+                "relative_phase_deg": np.asarray(inner["relative_phase_deg"]).copy(),
                 "natural_freqs": fe.freq[: min(8, len(fe.freq))].copy(),
-                "response_metrics": _copy_array_or_value(inner.get("response_metrics", {})),
-                "raw_mode_scores": _copy_array_or_value(inner.get("raw_mode_scores", None)),
+                "response_metrics": inner.get("response_metrics", {}),
             }
         )
         return -score
@@ -1019,37 +738,19 @@ class PiezoPatchOptimizer:
         fe, layout, penalty = self.build_fe_for_design(result.x)
         if penalty > 0 or fe is None:
             raise RuntimeError("Could not rebuild FE model for optimization result")
-        inner = self.inner_optimizer(fe)
+        inner = self.evaluate_at_natural_frequency(fe)
         return {"result": result, "fe": fe, "layout": layout, "penalty": penalty, "inner": inner}
 
-    def get_mode_result(self, inner: dict, mode_number: Optional[int] = None, mode_index: int = 0) -> dict:
-        """Extract one mode result from a single- or multi-mode inner result."""
-        mode_results = inner.get("mode_results", [inner])
-        if mode_number is not None:
-            for r in mode_results:
-                if int(r["mode_number"]) == int(mode_number):
-                    return r
-            raise KeyError(f"mode_number={mode_number} not found in mode_results")
-        return mode_results[int(mode_index)]
-
-    def dense_metric_frf_for_plot(
-        self,
-        fe,
-        voltage_vector,
-        *,
-        output: Optional[str] = None,
-        sweep_range_hz=None,
-        n_freq=None,
-    ) -> dict:
+    def dense_metric_frf_for_plot(self, fe, voltage_vector, *, output: Optional[str] = None, sweep_range_hz=None, n_freq=None) -> dict:
         """Dense mechanical FRF for one voltage pattern and selected output metric."""
-        ms = self.objective_settings
+        ms = self.mode_settings
         output = canonical_output_name(output or ms.output)
         sweep_range_hz = sweep_range_hz or ms.final_sweep_range_hz
         n_freq = int(n_freq or ms.final_sweep_n_freq)
         freq = np.linspace(float(sweep_range_hz[0]), float(sweep_range_hz[1]), n_freq)
         omega_vec = 2 * np.pi * freq
         voltage_vector = np.asarray(voltage_vector, dtype=complex)
-        D = self.effective_damping_matrix(fe)
+        D = fe.effective_damping_matrix() if hasattr(fe, "effective_damping_matrix") else fe.C_red + fe.params.c_alpha * fe.M_red + fe.params.c_beta * fe.K_red
 
         metric = np.zeros(n_freq, dtype=float)
         tip_disp = np.zeros(n_freq, dtype=float)
@@ -1079,10 +780,6 @@ class PiezoPatchOptimizer:
             "voltage_vector": voltage_vector,
         }
 
-    def dense_metric_frf_for_mode_result(self, fe, mode_result: dict, **kwargs) -> dict:
-        """Dense FRF using the voltage vector stored in a single mode_result."""
-        return self.dense_metric_frf_for_plot(fe, mode_result["voltage_vector"], output=mode_result.get("output"), **kwargs)
-
     def dense_tip_frf_for_plot(self, fe, voltage_vector, *, sweep_range_hz=None, n_freq=None) -> dict:
         """Backward-compatible dense tip FRF for one voltage pattern."""
         return self.dense_metric_frf_for_plot(
@@ -1101,8 +798,8 @@ class PiezoPatchOptimizer:
             signs = np.asarray(signs_tuple, dtype=float)
             frf = self.dense_metric_frf_for_plot(
                 fe,
-                self.objective_settings.voltage_amplitude * signs,
-                output=output or self.objective_settings.output,
+                self.mode_settings.voltage_amplitude * signs,
+                output=output or self.mode_settings.output,
                 sweep_range_hz=sweep_range_hz,
                 n_freq=n_freq,
             )

@@ -11,7 +11,7 @@ sys.path.append(str(PROJECT_ROOT))
 from Modeling.models.beam_properties import PiezoBeamParams, compute_EI_and_rhoA
 from Modeling.models.piezo_patch_optimizer import (
     GeometrySettings,
-    SingleModeSettings,
+    ObjectiveSettings,
     CircuitSettings,
     OptimizerSettings,
     PiezoPatchOptimizer,
@@ -58,7 +58,7 @@ geom_settings = GeometrySettings(
     gap_bounds=(4e-3, 80e-3),
     tip_substrate_bounds=(0.0, 150e-3),
 )
-mode_settings = SingleModeSettings(
+mode_settings = ObjectiveSettings(
     target_mode_number=1,
     voltage_amplitude=1.0,
     phase_mode="binary",
