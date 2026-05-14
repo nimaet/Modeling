@@ -3,6 +3,7 @@ import numpy as np
 
 @dataclass
 class PiezoBeamParams:
+	config_name: str = 'parallel'
 	# ===================== Geometry =====================
 	# L_b: float = 0.3185			# beam length [m]
 	w_p: float = 10e-3			# patch width [m]
@@ -92,6 +93,10 @@ class PiezoBeamParams:
 		# electromechanical coupling
 		hpc = 0.5*(self.hp + self.hs)
 		self.theta_mech = 2.0*self.e31 * self.b * hpc
+		if self.config_name == 'series':
+			self.theta_mech *= 0.5
+			self.Cp_scalar *= 0.5
+			self.Cp = self.Cp_scalar * np.ones(self.S)
 		self._update_c_alpha_beta()
 
 
@@ -215,11 +220,12 @@ class PiezoBeamParams:
 
 		# ---- mechanical ----
 		m_bar  = self.m
-		EI_bar = self.YI
-		theta1 = self.theta_mech/self.YI
-		theta2 = 0
+		EI_bar = self.YI * self.YI_s *(self.w_p + self.w_s) / (self.YI_s*self.w_p  + self.YI * self.w_s)
+		# theta1 = self.theta_mech/self.YI
+		theta1 = self.theta_mech*self.w_p/(self.YI_s*self.w_p  + self.YI * self.w_s)
+		theta2 = self.theta_mech*self.w_s/(self.YI_s*self.w_p  + self.YI * self.w_s)
 		# ---- electrical ----
-		Cp_bar = self.Cp_scalar/self.w_p
+		Cp_bar = (self.Cp_scalar+self.theta_mech*theta2*self.w_p)/(self.w_p + self.w_s)
 
 		# inductances (from ROM realization)
 		L_bar  = R_c / K_i_eff * self.w_p
@@ -229,7 +235,7 @@ class PiezoBeamParams:
 		# NOTE:
 		# theta_mech corresponds to the *local* coupling θ in Eq. (4)
 		# ROM + Γ implicitly perform the spatial averaging, so we take:
-		theta_bar = self.theta_mech
+		theta_bar = self.theta_mech*self.w_p*self.YI_s/(self.YI_s*self.w_p  + self.YI * self.w_s)
 
 		return {
 			'm_bar': m_bar,

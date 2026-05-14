@@ -38,6 +38,8 @@ class PiezoBeamODESystem:
 	K_mech: np.ndarray
 	C: np.ndarray
 	D: np.ndarray
+	Gamma_free: np.ndarray
+	Gamma_exc: np.ndarray
 	f_ext_freq_domain: np.ndarray
 	f_int: callable
 	K_tan: callable
@@ -297,7 +299,8 @@ class PiezoBeamFE:
 
 		# Damping and mass matrices
 		if hasattr(self, 'C_red'):
-			D = self.C_red + self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+			# D = self.C_red + self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
+			D = self.C_red 
 		else: 
 			D = self.params.c_alpha*self.M_red + self.params.c_beta*self.K_red
 		# print('alpha, beta', self.params.c_alpha, self.params.c_beta)
@@ -354,6 +357,8 @@ class PiezoBeamFE:
 			K_mech=self.K_red,
 			C=C_ODE,
 			D=D,
+			Gamma_free=Gamma_f,
+			Gamma_exc=Gamma_e,
 			f_int=f_int,
 			K_tan=K_tan,
 			f_ext=f_ext,
@@ -530,6 +535,8 @@ class PiezoBeamFE:
 			K_mech=self.K_red,
 			C=C_ODE,
 			D=D,
+			Gamma_free=Gamma_f,
+			Gamma_exc=Gamma_e,
 			f_int=f_int,
 			K_tan=K_tan,
 			f_ext=f_ext,
@@ -699,6 +706,8 @@ class PiezoBeamFE:
 			K_mech=self.K_red,
 			C=C_ODE,
 			D=D,
+			Gamma_free=Gamma_f,
+			Gamma_exc=Gamma_e,
 			f_int=f_int,
 			K_tan=K_tan,
 			f_ext=f_ext,

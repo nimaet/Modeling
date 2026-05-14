@@ -400,7 +400,7 @@ class ROM:
 
 		eta = Y[:, :N].T
 		eta_dot = (1j * w[None, :]) * eta
-
+		voltages = Y[:, N:].T
 		npts = len(x_eval)
 		nfreq = eta.shape[1]
 		disp = np.zeros((npts, nfreq), dtype=complex)
@@ -414,8 +414,17 @@ class ROM:
 		# vel_mag = np.mean(np.abs(veloc), axis=0)
 		# disp_mag = np.mean(np.abs(disp), axis=0)
 		freq_hz = w / (2 * np.pi)
+		out = {
+			"freq_hz": freq_hz,
+			"disp": disp,
+			"veloc": veloc,
+			"eta": eta,
+			"eta_dot": eta_dot,
+			"voltages": voltages,
 
-		return freq_hz, disp, veloc
+		}
+		return out
+		
 
 	# ===================== ODE =====================
 	def odefun(self, t, x, v_exc, j_exc, R_c, K_c=0, K_p=0, K_i=0):
@@ -637,7 +646,10 @@ class ROM:
 		)
 
 		# reconstruct velocity field
+		eta = sol.y[0:N, :]
 		eta_dot = sol.y[N:2*N, :]
+		z = sol.y[2*N:2*N+S, :]
+		v = sol.y[2*N+S:2*N+2*S, :]
 		veloc = np.zeros((len(x_eval), eta_dot.shape[1]))
 
 		for r in range(N):
@@ -653,19 +665,19 @@ class ROM:
 			fs = 1.0 / dt
 
 			# FFT of velocity field (space x time)
-			Y = np.fft.fft(veloc, axis=1)
+			Y = np.fft.rfft(veloc, axis=1)
 
 			# FFT of excitation signal
-			X = np.fft.fft(v_exc(t))
+			X = np.fft.rfft(v_exc(t))
 
 			# Frequency vector
-			freq = np.fft.fftfreq(Nt, d=dt)
+			freq = np.fft.rfftfreq(Nt, d=dt)
 
-			# Positive frequencies only
-			idx = freq >= 0
-			freq = freq[idx]
-			Y = Y[:, idx]
-			X = X[idx]
+			# # Positive frequencies only
+			# idx = freq >= 0
+			# freq = freq[idx]
+			# Y = Y[:, idx]
+			# X = X[idx]
 
 			# FRF (spatially averaged magnitude)
 			FRF = np.mean(np.abs(Y), axis=0) / np.abs(X)
@@ -678,6 +690,10 @@ class ROM:
 		return {
 			't': sol.t,
 			'state': sol.y,
+			'eta': eta,
+			'v': v,
+			'z': z,
+			'eta_dot': eta_dot,
 			'veloc': veloc,
 			'x_eval': x_eval,
 			'freq': freq,

@@ -12,12 +12,12 @@ class HomogenizedModel:
 		self.branch = branch
 		if branch == 'acoustic':
 			self.Omega_ndim = np.linspace(
-				0.001,
-				1/np.sqrt(1 + self.theta_tilde**2)*0.997,
+				0.5,
+				1/np.sqrt(1 + self.theta_tilde**2)*0.998,
 				5000
 			)
 		elif branch == 'optical':
-			self.Omega_ndim = np.linspace(1.01, 3.0, 5000)
+			self.Omega_ndim = np.linspace(1.001, 1.5, 5000)
 		self.Omega_dim = self.Omega_ndim / self.ref_scales['t0']
 	# ======================
 	# Original functions
@@ -185,10 +185,11 @@ class HomogenizedModel:
 		flux_linkage = envelope_func(
 			0,
 			t_eval - t_shift
-		) * 1000
-		voltage = scipy.integrate.cumulative_trapezoid(
-			flux_linkage, t_eval, initial=0
 		) 
+		# voltage = scipy.integrate.cumulative_trapezoid(
+		# 	flux_linkage, t_eval, initial=0
+		# ) 
+		voltage = np.gradient(flux_linkage, t_eval)
 		voltage = np.real(voltage)
 		return interp1d(
 			t_eval, voltage, kind='cubic', fill_value='extrapolate'
@@ -212,3 +213,16 @@ class HomogenizedModel:
 			'P': P_fun(omega0[idx]),
 			'Q_over_P': focusing[idx]
 		}
+	
+	def focus_point(self, omega0):
+		v_g, P_fun = self.P_vg_fun_dim()
+		Q = self.Q_fun_dim(omega0)
+		P = P_fun(omega0)
+
+		return {
+			'omega0': omega0,
+			'Q': Q,
+			'P': P,
+			'Q_over_P': Q / P,
+		}
+
