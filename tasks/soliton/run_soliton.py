@@ -34,38 +34,37 @@ import matplotlib.pyplot as plt
 import pickle
 import hashlib
 
-Q = 300
+Q = 31
 # params_fe = PiezoBeamParams( 
 #     hp=0.55e-3, hs=0.51e-3, b=21e-3, w_p=21e-3, w_s=1e-3,
 #     Q=Q
 # )
-j_exc = 299
+j_exc = 30
 params_fe = PiezoBeamParams(
-                            hp=0.252e-3, hs=0.51e-3
-                            # hp=0.31e-3, hs=0.607e-3
-                            , d31= -1.48e-10,eps_r=1700
-                            ,Q=Q
+                            hp=0.252e-3, hs=0.51e-3,
+                            # hp=0.31e-3, hs=0.607e-3,
+                            d31= -1.45e-10,eps_r=1700,
+							# rho_p=7700,
+							# omega_p=2*pi*100, omega_q=2*pi*5000,
+							# zeta_dict = zeta_dict
+                            n_patches=Q
                             )
-# j_exc = 30
-# params_fe.zeta_p = 0.0151*8
-# params_fe.zeta_q = 0.0392*10
-params_fe.zeta_p = 0.0151
-params_fe.zeta_q = 0.0392
+
 fe = FE1.PiezoBeamFE(params_fe,
                       n_el_patch=1, n_el_gap=1
                       )
 x_eval = np.linspace(0, params_fe.L_b, 500)
 
 ncycls = 100
-delay_factor = 0.3
-eps_phi = 2
+delay_factor = 0.5
+eps_phi = 0.002
 excitation_scale = 1
 
 R_c = 1e3
-K_c = -3e5
+K_c = 1e7
 K_i = 220
 K_p = 1e-4
-save_file_name = f'soliton_FE_hardening_highdamping_longbeam_epsphi002.pkl'
+save_file_name = f'soliton_FE_hardening_highdamping_longbeam_epsphi006.pkl'
 print('L= ', R_c / K_i)
 print('Lc= ', R_c / K_c)
 
@@ -77,6 +76,7 @@ print(hom_params)
 
 
 
+branch = 'acoustic'
 branch = 'optical'
 hom_model = HomogenizedModel(
     ref_scales=ref_scales,
@@ -85,6 +85,10 @@ hom_model = HomogenizedModel(
 )
 
 peak_focus_data = hom_model.peak_focus()
+print('Peak focusing frequency ω₀ =', peak_focus_data['omega0'], 'rad/s',
+      '(', peak_focus_data['omega0']/(2*np.pi), 'Hz )')
+
+peak_focus_data = hom_model.focus_point(2850)
 omega0 = hom_model.Omega_dim
 print("Q/P:", peak_focus_data['Q_over_P'])
 v_g, P_func =  hom_model.P_vg_fun_dim()
@@ -98,7 +102,7 @@ QP_vals = Q_vals * P_vals
 # Find peak focusing frequency
 
 peak_focus_freq = peak_focus_data['omega0']
-peak_focus_freq = 6000
+# peak_focus_freq = 6000
 # peak_focus_freq = 4000
 # peak_focus_freq = 2861
 
@@ -119,10 +123,12 @@ fig, ax = plt.subplots(2, 3, figsize=(14, 6))
 # Plot Q coefficient
 ax[0, 0].plot(omega0, np.real(Q_vals), 'b-', linewidth=2, label='Real Part')
 ax[0, 0].plot(omega0, np.imag(Q_vals), 'b--', linewidth=2, label='Imaginary Part')
+ax[0, 0].scatter(peak_focus_freq, peak_focus_data['Q'], 
+                 color='red', s=100, zorder=5, label=f'Q at Peak {peak_focus_data["Q"]:.2e}')
 ax[0, 0].set_xlabel('Frequency $\omega_0$ [rad/s]')
 ax[0, 0].set_ylabel('$Q$ ')
 ax[0, 0].grid(True, alpha=0.3)
-ax[0, 0].legend()
+# ax[0, 0].legend()
 # Plot P coefficient
 ax[1, 0].plot(omega0, P_vals, 'r-', linewidth=2)
 ax[1, 0].scatter(peak_focus_freq, peak_focus_data['P'], 
@@ -138,7 +144,7 @@ ax[0, 1].set_ylabel('Focusing Coefficient $Q/P$ [1/(m²·s)]')
 ax[0, 1].scatter(peak_focus_freq, np.real(focusing[np.argmax(np.real(focusing))]), 
                  color='red', s=100, zorder=5, label=f'Peak at {peak_focus_freq:.1f} rad/s')
 ax[0, 1].grid(True, alpha=0.3)
-ax[0, 1].legend()
+# ax[0, 1].legend()
 
 # Plot dispersion relation
 ax[0, 2].plot( hom_model.q_fun_dim(omega0)*ref_scales['x0'], omega0, 'k-', linewidth=2)
@@ -147,7 +153,7 @@ ax[0, 2].scatter(hom_model.q_fun_dim(peak_focus_freq)*ref_scales['x0'], peak_foc
 ax[0, 2].set_xlabel('Wavenumber $q$ [1/m]')
 ax[0, 2].set_ylabel('Frequency $\omega_0$ [rad/s]')
 ax[0, 2].grid(True, alpha=0.3)
-ax[0, 2].legend()
+# ax[0, 2].legend()
 
 # Plot Q·P product
 ax[1, 1].plot(omega0, QP_vals, 'm-', linewidth=2)
