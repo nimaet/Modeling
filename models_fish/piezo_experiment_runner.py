@@ -256,6 +256,16 @@ def summarize_best(best: dict) -> dict:
         rms_score = np.asarray([r["response_metrics"].get("rms", np.nan) for r in inner["mode_results"]], dtype=float)
         phase_deg = inner.get("phase_deg", None)
         relative_phase_deg = inner.get("relative_phase_deg", None)
+        traveling_metrics = None
+    elif objective == "traveling_wave":
+        mode_numbers = ()
+        freq_hz = float(inner["freq_hz"])
+        tip_score = metrics.get("tip", np.nan)
+        mean_abs_score = metrics.get("mean_abs", np.nan)
+        rms_score = metrics.get("rms", np.nan)
+        phase_deg = inner.get("phase_deg", None)
+        relative_phase_deg = inner.get("relative_phase_deg", None)
+        traveling_metrics = inner.get("traveling_wave_metrics", {})
     else:
         mode_numbers = (int(inner.get("target_mode_number", inner.get("single_mode_number", 1))),)
         freq_hz = float(inner["freq_hz"])
@@ -264,6 +274,7 @@ def summarize_best(best: dict) -> dict:
         rms_score = metrics.get("rms", np.nan)
         phase_deg = inner.get("phase_deg", None)
         relative_phase_deg = inner.get("relative_phase_deg", None)
+        traveling_metrics = None
 
     return {
         "Np": len(layout["xL"]),
@@ -278,6 +289,10 @@ def summarize_best(best: dict) -> dict:
         "rms_score": rms_score,
         "raw_mode_scores": inner.get("raw_mode_scores", None),
         "weighted_mode_scores": inner.get("weighted_mode_scores", None),
+        "traveling_index": None if traveling_metrics is None else traveling_metrics.get("traveling_index", np.nan),
+        "traveling_amplitude_rms": None if traveling_metrics is None else traveling_metrics.get("amplitude_rms", np.nan),
+        "traveling_envelope_cv": None if traveling_metrics is None else traveling_metrics.get("envelope_cv", np.nan),
+        "traveling_phase_slope_rad_per_m": None if traveling_metrics is None else traveling_metrics.get("phase_slope_rad_per_m", np.nan),
         "freq_hz": freq_hz,
         "best_z_mm": 1e3 * result.x,
         "xL_mm": 1e3 * layout["xL"],
@@ -356,6 +371,11 @@ def run_sweep(
             if summary.get("raw_mode_scores") is not None:
                 print("Raw mode scores:", _fmt_array_short(summary["raw_mode_scores"]))
                 print("Weighted mode scores:", _fmt_array_short(summary["weighted_mode_scores"]))
+            if summary["objective"] == "traveling_wave":
+                print("Traveling index:", _fmt_array_short(summary["traveling_index"]))
+                print("Traveling RMS amplitude:", _fmt_array_short(summary["traveling_amplitude_rms"]))
+                print("Envelope CV:", _fmt_array_short(summary["traveling_envelope_cv"]))
+                print("Phase slope [rad/m]:", _fmt_array_short(summary["traveling_phase_slope_rad_per_m"]))
 
         record = {
             "case_id": case_id,
@@ -389,6 +409,10 @@ def records_to_dataframe(records):
             "output": s["output"],
             "score": s["score"],
             "raw_mode_scores": s.get("raw_mode_scores", None),
+            "traveling_index": s.get("traveling_index", None),
+            "traveling_amplitude_rms": s.get("traveling_amplitude_rms", None),
+            "traveling_envelope_cv": s.get("traveling_envelope_cv", None),
+            "traveling_phase_slope_rad_per_m": s.get("traveling_phase_slope_rad_per_m", None),
             "freq_hz": s["freq_hz"],
             "success": s["success"],
             "message": s["message"],

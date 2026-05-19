@@ -479,7 +479,11 @@ plt.grid(True)
 plt.show()
 
 # %%
-%matplotlib widget
+try:
+    get_ipython().run_line_magic("matplotlib", "widget")
+except NameError:
+    pass
+
 plt.figure()
 
 plt.plot(t, v[30, :])
@@ -499,7 +503,6 @@ plt.xlabel("t [s]")
 plt.ylabel("v_1(t) [V]")
 plt.grid(True)
 plt.show()
-
 
 
 

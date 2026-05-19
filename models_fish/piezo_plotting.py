@@ -190,6 +190,63 @@ def plot_phase_phasors(phase_deg=None, phase_rad=None, voltage_vector=None, ax=N
     return fig, ax
 
 
+def plot_traveling_wave_shape(inner: dict, ax=None, n_time: int = 8):
+    """Plot envelope and time snapshots for a traveling-wave optimizer result."""
+    if inner.get("objective") != "traveling_wave":
+        raise ValueError("plot_traveling_wave_shape requires a traveling-wave inner result")
+
+    metrics = inner["traveling_wave_metrics"]
+    x = np.asarray(metrics.get("x_full", metrics["x"]), dtype=float)
+    W = np.asarray(metrics.get("W_full", metrics["W"]), dtype=complex)
+    amp = np.abs(W)
+
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(9, 4))
+    else:
+        fig = ax.get_figure()
+
+    ax.plot(x, amp, "k--", lw=1.5, label="envelope")
+    ax.plot(x, -amp, "k--", lw=1.5)
+
+    phases = np.linspace(0.0, 2.0 * np.pi, int(n_time), endpoint=False)
+    for phi in phases:
+        ax.plot(x, np.real(W * np.exp(1j * phi)), lw=1.0, alpha=0.75)
+
+    ax.set_xlabel("x [m]")
+    ax.set_ylabel("Transverse displacement [m/V]")
+    ax.set_title(
+        "Traveling wave: "
+        f"T_i={metrics['traveling_index']:.3f}, "
+        f"A_rms={metrics['amplitude_rms']:.3e}, "
+        f"CV={metrics['envelope_cv']:.3f}"
+    )
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    return fig, ax
+
+
+def plot_traveling_wave_metric_sweep(sweep: dict, ax=None):
+    """Plot traveling-wave objective score and traveling index over frequency."""
+    if ax is None:
+        fig, ax = plt.subplots(figsize=(9, 4))
+    else:
+        fig = ax.get_figure()
+
+    freq = np.asarray(sweep["freq"], dtype=float)
+    ax.plot(freq, sweep["score"], lw=2, label="objective score")
+    ax.plot(freq, sweep["traveling_index"], lw=1.5, label="traveling index")
+    ax.plot(freq, sweep["envelope_score"], lw=1.2, label="envelope score")
+    ax.plot(freq, sweep["amplitude_score"], lw=1.2, label="amplitude score")
+    ax.set_xlabel("Frequency [Hz]")
+    ax.set_ylabel("Dimensionless score")
+    ax.set_ylim(bottom=0)
+    ax.grid(True, alpha=0.3)
+    ax.legend(loc="best")
+    fig.tight_layout()
+    return fig, ax
+
+
 def plot_multimode_phase_matrix(inner: dict, ax=None, relative: bool = True, annotate: bool = True):
     """Visualize optimized phase of each patch for each target mode.
 
