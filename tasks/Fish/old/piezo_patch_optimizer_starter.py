@@ -1,5 +1,5 @@
 """
-piezo_patch_optimizer_starter.py
+optimizer_starter.py
 
 Starter optimizer for piezo patch placement using the FE3.py / FE_helpers.py framework.
 

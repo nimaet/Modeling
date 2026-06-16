@@ -9,7 +9,7 @@ PROJECT_ROOT = Path.cwd()
 sys.path.append(str(PROJECT_ROOT))
 
 from Modeling.models.beam_properties import PiezoBeamParams, compute_EI_and_rhoA
-from Modeling.models.piezo_patch_optimizer import (
+from Modeling.models.optimizer import (
     GeometrySettings,
     ObjectiveSettings,
     CircuitSettings,

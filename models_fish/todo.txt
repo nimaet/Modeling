@@ -1,0 +1,8 @@
+parallelize
+cleanup postprocess and plotting
+add animations and finalize plots
+verify single and multi-mode logic
+add water 
+add thrust model
+convert to 3d ode for control
+mujoco sim

@@ -10,9 +10,9 @@ import numpy as np
 from scipy.linalg import eigh
 
 try:  # package import
-    from Modeling.models_fish.beam_properties_fish import PiezoBeamParams
+    from .beam_properties import PiezoBeamParams
 except Exception:  # local / notebook fallback
-    from beam_properties_fish import PiezoBeamParams
+    from beam_properties import PiezoBeamParams
 
 
 @dataclass
@@ -25,6 +25,92 @@ class GeometrySpec:
     piezos: list  # each item has at least {'xL': float, 'xR': float}
 
 
+@dataclass(frozen=True)
+class ElectricalChannel:
+    """Metadata for one piezo electrical channel."""
+
+    patch_id: int
+    x_left: float
+    x_right: float
+    capacitance: float
+    coupling_sign: float = 1.0
+    group: str | None = None
+
+
+@dataclass
+class WaterSettings:
+    """Linear/nonlinear water model settings for FE response helpers."""
+
+    enabled: bool = False
+    model: str = "none"  # "none", "linear", "morison"
+    rho: float = 1000.0
+    width: float | None = None
+    added_mass_coefficient: float = 1.0
+    linear_damping_coefficient: float = 0.0
+    drag_coefficient: float = 1.0
+    morison_max_iter: int = 50
+    morison_tol: float = 1e-6
+    morison_relaxation: float = 0.7
+
+    def __post_init__(self):
+        if self.model not in ("none", "linear", "morison"):
+            raise ValueError("model must be exactly 'none', 'linear', or 'morison'")
+
+        self.rho = float(self.rho)
+        self.added_mass_coefficient = float(self.added_mass_coefficient)
+        self.linear_damping_coefficient = float(self.linear_damping_coefficient)
+        self.drag_coefficient = float(self.drag_coefficient)
+        self.morison_max_iter = int(self.morison_max_iter)
+        self.morison_tol = float(self.morison_tol)
+        self.morison_relaxation = float(self.morison_relaxation)
+
+        if self.width is not None:
+            self.width = float(self.width)
+
+        if self.rho <= 0:
+            raise ValueError("rho must be positive")
+        if self.width is not None and self.width <= 0:
+            raise ValueError("width must be positive")
+        if self.added_mass_coefficient < 0:
+            raise ValueError("added_mass_coefficient must be nonnegative")
+        if self.linear_damping_coefficient < 0:
+            raise ValueError("linear_damping_coefficient must be nonnegative")
+        if self.drag_coefficient < 0:
+            raise ValueError("drag_coefficient must be nonnegative")
+        if self.morison_max_iter < 1:
+            raise ValueError("morison_max_iter must be >= 1")
+        if self.morison_tol <= 0:
+            raise ValueError("morison_tol must be positive")
+        if not (0 < self.morison_relaxation <= 1):
+            raise ValueError("morison_relaxation must be in (0, 1]")
+
+@dataclass
+class ThrustSettings:
+    """Lighthill-style thrust postprocessing settings."""
+
+    enabled: bool = False
+    rho: float = 1000.0
+    width: float | None = None
+    beta: float = 1.0
+    swimming_speed: float = 0.0
+
+    def __post_init__(self):
+        self.rho = float(self.rho)
+        self.beta = float(self.beta)
+        self.swimming_speed = float(self.swimming_speed)
+        if self.width is not None:
+            self.width = float(self.width)
+
+        if self.rho <= 0:
+            raise ValueError("rho must be positive")
+        if self.width is not None and self.width <= 0:
+            raise ValueError("width must be positive")
+        if self.beta < 0:
+            raise ValueError("beta must be nonnegative")
+        if self.swimming_speed < 0:
+            raise ValueError("swimming_speed must be nonnegative")
+        
+        
 @dataclass(frozen=True)
 class PiezoBeamODESystem:
     """Container for coupled mechanical/electrical ODE systems."""
@@ -73,20 +159,43 @@ class PiezoBeamFE:
             raise ValueError(f"Could not identify a unique mesh node at x={x:.16g}; matches={idx}")
         return int(idx[0])
 
+    def _patch_capacitance(self, pz: dict, xL: float, xR: float) -> float:
+        if "capacitance" in pz:
+            return float(pz["capacitance"])
+        return float(2.0 * self.params.eps33 * self.params.b * (xR - xL) / self.params.hp)
+
     def _build_Gamma(self) -> None:
         x_nodes = np.asarray(self.geom.x_nodes, dtype=float)
         piezos = self.geom.piezos
         ndof = 2 * len(x_nodes)
         gamma = np.zeros((ndof, len(piezos)))
+        capacitances = np.zeros(len(piezos), dtype=float)
+        channels = []
 
         for j, pz in enumerate(piezos):
-            kL = self._find_node_index(x_nodes, float(pz["xL"]))
-            kR = self._find_node_index(x_nodes, float(pz["xR"]))
-            theta = float(pz.get("theta", self.params.theta_mech))
+            xL = float(pz["xL"])
+            xR = float(pz["xR"])
+            kL = self._find_node_index(x_nodes, xL)
+            kR = self._find_node_index(x_nodes, xR)
+            coupling_sign = float(pz.get("coupling_sign", 1.0))
+            theta = coupling_sign * float(pz.get("theta", self.params.theta_mech))
             gamma[2 * kL + 1, j] += -theta
             gamma[2 * kR + 1, j] += theta
+            capacitances[j] = self._patch_capacitance(pz, xL, xR)
+            channels.append(
+                ElectricalChannel(
+                    patch_id=int(pz.get("patch_id", j)),
+                    x_left=xL,
+                    x_right=xR,
+                    capacitance=float(capacitances[j]),
+                    coupling_sign=coupling_sign,
+                    group=pz.get("group", None),
+                )
+            )
 
         self.Gamma = gamma
+        self.Cp = np.diag(capacitances)
+        self.patch_channels = channels
 
     def _assemble_KM(self) -> None:
         x_nodes = np.asarray(self.geom.x_nodes, dtype=float)
@@ -225,7 +334,7 @@ class PiezoBeamFE:
         N = self.M_red.shape[0]
         Nf = len(idx_f)
         D = self.effective_damping_matrix()
-        M_elec = self.params.Cp_scalar * np.eye(Nf)
+        M_elec = self.Cp[np.ix_(idx_f, idx_f)]
         M_ODE = np.block([[self.M_red, np.zeros((N, Nf))], [np.zeros((Nf, N)), M_elec]])
         C_ODE = np.block([[D, -Gamma_f], [Gamma_f.T, (K_p / R_c) * np.eye(Nf)]])
         return M_ODE, C_ODE, D
@@ -468,8 +577,12 @@ def build_geometry_with_regions(L: float, regions: list, piezos: list, default_h
         if not np.any(np.abs(x_nodes - xR) <= tol):
             raise RuntimeError(f"Piezo right edge xR={xR} not found in mesh nodes")
         out = {"xL": xL, "xR": xR}
-        if "theta" in pz:
-            out["theta"] = float(pz["theta"])
+        for key in ("theta", "capacitance", "coupling_sign"):
+            if key in pz:
+                out[key] = float(pz[key])
+        for key in ("patch_id", "group"):
+            if key in pz:
+                out[key] = pz[key]
         piezos_validated.append(out)
 
     return GeometrySpec(x_nodes=x_nodes, elem_EI=elem_EI, elem_rhoA=elem_rhoA, piezos=piezos_validated)
@@ -626,3 +739,12 @@ def build_linear_electrical_network(Nf: int, K_i, K_i_nl: float, periodic: bool 
         )
 
     return {"elements": elements}
+
+def build_region_types_from_params(params: PiezoBeamParams, *, h_patch: float = 1e-3, h_gap: float = 1e-3) -> dict:
+    """Convenience region_types dictionary for simple piezo/substrate layouts."""
+    rhoA_patch = params.b * (params.rho_s * params.hs + 2.0 * params.rho_p * params.hp)
+    rhoA_gap = params.b * params.rho_s * params.hs
+    return {
+        "piezo": {"EI": params.YI, "rhoA": rhoA_patch, "h": h_patch},
+        "substrate": {"EI": params.YI_s, "rhoA": rhoA_gap, "h": h_gap},
+    }

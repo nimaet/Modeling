@@ -19,8 +19,8 @@ try:  # package imports
     from Modeling.models.beam_properties import PiezoBeamParams
     import Modeling.models.FE3 as FE_module
 except Exception:  # local / notebook fallback
-    from beam_properties_fish import PiezoBeamParams
-    import FE_fish as FE_module
+    from beam_properties import PiezoBeamParams
+    import model as FE_module
 
 
 @dataclass

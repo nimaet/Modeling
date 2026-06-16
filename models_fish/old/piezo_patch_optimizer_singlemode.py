@@ -22,17 +22,11 @@ from scipy.optimize import OptimizeResult, differential_evolution, minimize
 from tqdm.auto import tqdm
 
 try:  # package imports
-    from Modeling.models_fish.beam_properties_fish import PiezoBeamParams
-    import Modeling.models_fish.FE_fish as FE_module
+    from Modeling.models_fish.beam_properties import PiezoBeamParams
+    import Modeling.models_fish.model as FE_module
 except Exception:  # local / notebook fallback
-    try:
-        from beam_properties import PiezoBeamParams
-    except Exception:
-        from beam_properties_refactored import PiezoBeamParams
-    try:
-        import FE3_refactored as FE_module
-    except Exception:
-        import FE3 as FE_module
+    from beam_properties import PiezoBeamParams
+    import model as FE_module
 
 
 # -----------------------------------------------------------------------------
@@ -173,7 +167,7 @@ def trapezoid_node_weights(x_nodes: np.ndarray) -> np.ndarray:
     return weights
 
 
-def canonical_output_name(output: str) -> str:
+def output_name_from_aliases(output: str) -> str:
     output = output.lower().strip()
     aliases = {
         "tip": "tip",
@@ -197,7 +191,7 @@ def canonical_output_name(output: str) -> str:
 
 
 def metric_label(output: str) -> str:
-    output = canonical_output_name(output)
+    output = output_name_from_aliases(output)
     if output == "tip":
         return "Tip displacement magnitude [m/V]"
     if output == "mean_abs":
@@ -212,7 +206,7 @@ def evaluate_output_metric(fe, u_red: np.ndarray, output: str = "tip") -> float:
 
     For harmonic complex response u_hat, this evaluates the amplitude metric.
     """
-    output = canonical_output_name(output)
+    output = output_name_from_aliases(output)
 
     if output == "tip":
         return float(abs(u_red[tip_reduced_index(fe)]))
@@ -239,7 +233,7 @@ def response_summary(fe, u_red: np.ndarray, output: str) -> dict:
         "mean_abs": evaluate_output_metric(fe, u_red, "mean_abs"),
         "rms": evaluate_output_metric(fe, u_red, "rms"),
         "selected": evaluate_output_metric(fe, u_red, output),
-        "output": canonical_output_name(output),
+        "output": output_name_from_aliases(output),
     }
 
 
@@ -259,7 +253,7 @@ def optimize_binary_phases_general(
     """
     U_cols = np.asarray(U_cols, dtype=complex)
     n = U_cols.shape[1]
-    output = canonical_output_name(output)
+    output = output_name_from_aliases(output)
 
     best_score = -np.inf
     best_signs = None
@@ -352,7 +346,7 @@ def optimize_continuous_phases_metric(
     """
     U_cols = np.asarray(U_cols, dtype=complex)
     n = U_cols.shape[1]
-    output = canonical_output_name(output)
+    output = output_name_from_aliases(output)
 
     if n == 1:
         phase_rad = np.array([0.0])
@@ -587,7 +581,7 @@ class PiezoPatchOptimizer:
         For non-tip outputs, use response_columns() because the metric is based
         on the full displacement field.
         """
-        output = canonical_output_name(output or self.mode_settings.output)
+        output = output_name_from_aliases(output or self.mode_settings.output)
         U_cols = self.response_columns(fe, omega)
         if output != "tip":
             raise ValueError("unit_patch_response is only meaningful for scalar tip output; use response_columns instead")
@@ -602,7 +596,7 @@ class PiezoPatchOptimizer:
 
         omega = float(fe.omega[m - 1])
         freq_hz = float(fe.freq[m - 1])
-        output = canonical_output_name(ms.output)
+        output = output_name_from_aliases(ms.output)
         U_cols = self.response_columns(fe, omega)
         h_tip = U_cols[tip_reduced_index(fe), :]
 
@@ -744,7 +738,7 @@ class PiezoPatchOptimizer:
     def dense_metric_frf_for_plot(self, fe, voltage_vector, *, output: Optional[str] = None, sweep_range_hz=None, n_freq=None) -> dict:
         """Dense mechanical FRF for one voltage pattern and selected output metric."""
         ms = self.mode_settings
-        output = canonical_output_name(output or ms.output)
+        output = output_name_from_aliases(output or ms.output)
         sweep_range_hz = sweep_range_hz or ms.final_sweep_range_hz
         n_freq = int(n_freq or ms.final_sweep_n_freq)
         freq = np.linspace(float(sweep_range_hz[0]), float(sweep_range_hz[1]), n_freq)

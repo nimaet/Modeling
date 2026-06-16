@@ -41,4 +41,5 @@ venv/
 *.mat
 *.out
 
-
+optimizer_sweep_results
+sim_dat

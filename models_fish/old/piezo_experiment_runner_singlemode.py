@@ -14,7 +14,7 @@ except Exception:  # pandas is optional
     pd = None
 
 try:
-    from Modeling.models.piezo_patch_optimizer import (
+    from Modeling.models_fish.old.piezo_patch_optimizer_singlemode import (
         CircuitSettings,
         GeometrySettings,
         OptimizerSettings,
@@ -22,7 +22,7 @@ try:
         SingleModeSettings,
     )
 except Exception:
-    from Modeling.models_fish.piezo_patch_optimizer import (
+    from piezo_patch_optimizer_singlemode import (
         CircuitSettings,
         GeometrySettings,
         OptimizerSettings,
