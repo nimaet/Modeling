@@ -18,9 +18,17 @@ def reduce_multimode_scores(
     raw_scores: Sequence[float],
     *,
     weights: Optional[Sequence[float]] = None,
+    normalizers: Optional[Sequence[float]] = None,
     reduction: str = "weighted_sum",
+    eps: float = 1e-300,
 ) -> dict:
-    """Combine raw per-mode scores into one scalar objective."""
+    """Normalize, weight, and reduce per-mode scores into one objective.
+
+    If ``normalizers`` is None, ``normalized_scores`` equals ``raw_scores`` and
+    existing reductions preserve the previous numerical behavior. New balance-
+    style reductions are just ordinary reduction names and operate on weighted
+    normalized scores, same as the other reduction methods.
+    """
     raw = np.asarray(raw_scores, dtype=float)
     if raw.ndim != 1 or raw.size == 0:
         raise ValueError("raw_scores must be a nonempty 1D sequence")
@@ -32,29 +40,89 @@ def reduce_multimode_scores(
         if w.shape != raw.shape:
             raise ValueError("weights must have the same length as raw_scores")
 
-    weighted = w * raw
+    if normalizers is None:
+        n = None
+        normalized = raw.copy()
+    else:
+        n = np.asarray(normalizers, dtype=float)
+        if n.shape != raw.shape:
+            raise ValueError("normalizers must have the same length as raw_scores")
+        if np.any(n <= 0.0):
+            raise ValueError("normalizers must all be positive")
+        normalized = raw / n
+
+    weighted = w * normalized
     name = reduction.lower().strip().replace("-", "_")
 
     if name == "weighted_sum":
         score = float(np.sum(weighted))
     elif name == "weighted_mean":
         denom = float(np.sum(np.abs(w)))
-        score = float(np.sum(weighted) / denom) if denom > 0 else float(np.mean(raw))
+        score = float(np.sum(weighted) / denom) if denom > 0 else float(np.mean(normalized))
     elif name == "min":
         score = float(np.min(weighted))
     elif name == "geometric_mean":
-        eps = 1e-300
         vals = np.maximum(weighted, eps)
         score = float(np.exp(np.mean(np.log(vals))))
+    elif name == "min_max_ratio":
+        score = float(np.min(weighted) / (np.max(weighted) + eps))
+    elif name == "cv":
+        cv = float(np.std(weighted) / (np.mean(weighted) + eps))
+        score = float(1.0 / (1.0 + cv))
+    elif name == "gm_am_ratio":
+        gm = float(np.exp(np.mean(np.log(np.maximum(weighted, eps)))))
+        am = float(np.mean(weighted))
+        score = float(gm / (am + eps))
     else:
-        raise ValueError("multi_mode_reduction must be weighted_sum, weighted_mean, min, or geometric_mean")
+        raise ValueError(
+            "multi_mode_reduction must be weighted_sum, weighted_mean, min, "
+            "geometric_mean, min_max_ratio, cv, or gm_am_ratio"
+        )
 
     return {
         "score": score,
         "raw_scores": raw,
+        "normalized_scores": normalized,
+        "normalizers": n,
         "weights": w,
         "weighted_scores": weighted,
         "reduction": name,
+    }
+
+
+# -----------------------------------------------------------------------------
+# External Normalizer Calibration
+# -----------------------------------------------------------------------------
+
+def calibrate_multimode_normalizers(
+    optimizer: Any,
+    fe,
+    mode_numbers: Optional[Sequence[int]] = None,
+) -> dict:
+    """Compute external per-mode normalizers from a reference FE model.
+
+    This helper does not change optimizer settings. Use the returned
+    ``multi_mode_normalizers`` in a later ``ObjectiveSettings`` object if you want
+    normalization. Leaving that settings field as None preserves old behavior.
+    """
+    settings = optimizer.objective_settings
+    standing = settings.standing_wave_settings
+    modes = tuple(int(m) for m in (mode_numbers or standing["multi_mode_numbers"]))
+    if len(modes) == 0:
+        raise ValueError("mode_numbers must contain at least one mode")
+
+    mode_objective = SingleModeOptimizer(optimizer)
+    mode_results = [mode_objective.evaluate_mode(fe, m) for m in modes]
+    normalizers = np.asarray([r["score"] for r in mode_results], dtype=float)
+    if np.any(normalizers <= 0.0):
+        raise ValueError("calibrated multi-mode normalizers must all be positive")
+
+    return {
+        "multi_mode_numbers": modes,
+        "multi_mode_normalizers": normalizers,
+        "mode_results": mode_results,
+        "output": settings.output,
+        "phase_mode": settings.phase_mode,
     }
 
 
@@ -70,6 +138,10 @@ class MultiModeOptimizer:
         self.settings = optimizer.objective_settings
         self.mode_objective = SingleModeOptimizer(optimizer)
 
+    def calibrate_normalizers(self, fe, mode_numbers: Optional[Sequence[int]] = None) -> dict:
+        """Convenience wrapper for external normalizer calibration."""
+        return calibrate_multimode_normalizers(self.optimizer, fe, mode_numbers=mode_numbers)
+
     def evaluate(self, fe) -> dict:
         ms = self.settings
         standing = ms.standing_wave_settings
@@ -82,6 +154,7 @@ class MultiModeOptimizer:
         reduction = reduce_multimode_scores(
             raw_scores,
             weights=standing["multi_mode_weights"],
+            normalizers=standing["multi_mode_normalizers"],
             reduction=standing["multi_mode_reduction"],
         )
         output = ms.output
@@ -98,8 +171,10 @@ class MultiModeOptimizer:
             "mode_results": mode_results,
             "score": float(reduction["score"]),
             "raw_mode_scores": reduction["raw_scores"],
+            "normalized_mode_scores": reduction["normalized_scores"],
             "weighted_mode_scores": reduction["weighted_scores"],
             "multi_mode_weights": reduction["weights"],
+            "multi_mode_normalizers": reduction["normalizers"],
             "multi_mode_reduction": reduction["reduction"],
             "phase_mode": ms.phase_mode,
             "phase_optimizer": "per_mode",

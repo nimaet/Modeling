@@ -30,6 +30,7 @@ def default_standing_wave_settings() -> Dict[str, Any]:
         "single_mode_number": 1,
         "multi_mode_numbers": (1, 2, 3),
         "multi_mode_weights": None,
+        "multi_mode_normalizers": None,
         "multi_mode_reduction": "weighted_sum",
         "multi_mode_phase_policy": "per_mode",
     }
@@ -125,7 +126,8 @@ class ObjectiveSettings:
     standing_wave_settings:
         Dictionary for ``single_mode`` and ``multi_mode`` fields:
         ``single_mode_number``, ``multi_mode_numbers``, ``multi_mode_weights``,
-        ``multi_mode_reduction``, and ``multi_mode_phase_policy``.
+        ``multi_mode_normalizers``, ``multi_mode_reduction``, and
+        ``multi_mode_phase_policy``.
     traveling_wave_settings:
         Dictionary for traveling-wave frequency/window/score fields. Defaults
         are populated explicitly during ``__post_init__``.
@@ -175,6 +177,13 @@ class ObjectiveSettings:
             standing["multi_mode_weights"] = tuple(float(w) for w in standing["multi_mode_weights"])
             if len(standing["multi_mode_weights"]) != len(standing["multi_mode_numbers"]):
                 raise ValueError("multi_mode_weights must have the same length as multi_mode_numbers")
+
+        if standing["multi_mode_normalizers"] is not None:
+            standing["multi_mode_normalizers"] = tuple(float(v) for v in standing["multi_mode_normalizers"])
+            if len(standing["multi_mode_normalizers"]) != len(standing["multi_mode_numbers"]):
+                raise ValueError("multi_mode_normalizers must have the same length as multi_mode_numbers")
+            if any(v <= 0.0 for v in standing["multi_mode_normalizers"]):
+                raise ValueError("multi_mode_normalizers must all be positive")
 
         if standing["multi_mode_phase_policy"] != "per_mode":
             raise NotImplementedError("Only multi_mode_phase_policy='per_mode' is implemented for now")
