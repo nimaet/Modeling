@@ -3,7 +3,6 @@ warnings.filterwarnings("ignore", category=DeprecationWarning)
 
 import json
 import pickle
-import os
 from datetime import datetime
 from pathlib import Path
 
@@ -15,9 +14,9 @@ import numpy as np
 # =========================================================
 # Set these here instead of passing command-line arguments.
 # Update ARRAY_JOB_ID when collecting a different sweep run.
-SAVE_PREFIX = "Duffing_hardening"
+SAVE_PREFIX = "Duffing_gain_sweep"
 SIM_DAT_DIR = Path.cwd() / "sim_dat"
-ARRAY_JOB_ID = "10896438"
+ARRAY_JOB_ID = "11043124"
 RUN_DIR = None
 PROGRESS_EVERY = 1
 
@@ -39,6 +38,8 @@ def to_jsonable(obj):
 def build_grid_from_config(config):
     from itertools import product
 
+    from itertools import product
+
     sweep_spec = config.get("sweep_spec", [])
     keys = [p["key"] for p in sweep_spec]
     value_lists = [p.get("values", []) for p in sweep_spec]
@@ -52,16 +53,23 @@ def build_grid_from_config(config):
 def resolve_run_dir():
     if RUN_DIR is not None:
         return Path(RUN_DIR).resolve()
+def resolve_run_dir():
+    if RUN_DIR is not None:
+        return Path(RUN_DIR).resolve()
 
     if not ARRAY_JOB_ID:
+    if not ARRAY_JOB_ID:
         raise RuntimeError(
+            "Could not determine run directory. Set RUN_DIR or ARRAY_JOB_ID in the script."
             "Could not determine run directory. Set RUN_DIR or ARRAY_JOB_ID in the script."
         )
 
     return (SIM_DAT_DIR / f"{SAVE_PREFIX}_{ARRAY_JOB_ID}").resolve()
+    return (SIM_DAT_DIR / f"{SAVE_PREFIX}_{ARRAY_JOB_ID}").resolve()
 
 
 def main():
+    run_dir = resolve_run_dir()
     run_dir = resolve_run_dir()
     config_path = run_dir / "config.json"
     npz_dir = run_dir / "npz"
@@ -121,6 +129,7 @@ def main():
             }
         )
 
+        if idx % max(1, PROGRESS_EVERY) == 0 or idx == len(status_files):
         if idx % max(1, PROGRESS_EVERY) == 0 or idx == len(status_files):
             print(
                 f"Progress: {idx}/{len(status_files)} status files | "

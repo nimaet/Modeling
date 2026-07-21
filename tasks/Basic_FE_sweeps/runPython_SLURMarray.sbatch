@@ -6,7 +6,7 @@
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH -t120
-#SBATCH --array=0-49
+#SBATCH --array=0-6
 #SBATCH -q embers
 #SBATCH -o ./reports/Report-%A_%a.out
 
