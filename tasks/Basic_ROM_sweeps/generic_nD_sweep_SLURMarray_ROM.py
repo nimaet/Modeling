@@ -21,12 +21,15 @@ sys.path.append(str(project_root))
 
 import Modeling
 from Modeling.models.beam_properties import PiezoBeamParams
-from Modeling.models import FE_helpers
-import Modeling.models.FE3 as FE_module
+from Modeling.models.ROM1 import ROM
 
 # =========================================================
 # SWEEP SPEC INFRASTRUCTURE
 # =========================================================
+# Identical to generic_nD_sweep_SLURMarray.py (Basic_FE_sweeps) -- kept as a
+# self-contained copy here on purpose, matching this repo's existing
+# convention of duplicating this infra per sweep script rather than
+# factoring it into a shared module.
 from dataclasses import dataclass
 
 @dataclass
@@ -104,45 +107,38 @@ class SweepSpec:
 # =========================================================
 # BASE MODEL PARAMETERS
 # =========================================================
-SAVE_PREFIX = "Duffing_freq_sweep"
+SAVE_PREFIX = "ROM_Duffing_freq_sweep"
 sim_dat_dir = Path.cwd() / "sim_dat"
 sim_dat_dir.mkdir(parents=True, exist_ok=True)
 
-params_fe = PiezoBeamParams(
+params_rom = PiezoBeamParams(
 	hp=0.252e-3,
 	hs=0.51e-3,
-	d31=-1.45e-10,
-	eps_r=1700,
 )
 
-interface_idx = 10
-beta = 0.3
-ki0 = 4000
+N_modes = 20
 
+# Build the ROM once, at module scope. Unlike Basic_FE_sweeps' PiezoBeamFE
+# (rebuilt per simulation), ROM(...) does an eigenvalue solve plus mode
+# shape/coupling integrals that only depend on params_rom/N_modes -- never
+# on the swept electrical gains (K_c, K_i, K_p, R_c). Rebuilding it per grid
+# point would redo that expensive setup for nothing, so it's built once here
+# and shared (read-only) across every simulation and joblib worker.
+rom = ROM(params=params_rom, N=N_modes, modal_damping_ratios=np.array([0.0065] * N_modes))
+x_eval = np.linspace(0, rom.p.L_b, 100)
 
-def Ki_builder(beta):
-	ki1 = ki0 / (1 - beta)**2
-	ki2 = ki0 / (1 + beta)**2
-	return np.array(
-		[ki1, ki2] * (interface_idx // 2)
-		+ [ki1, ki2] * (15 - interface_idx // 2)
-		+ [ki1]
-	)
+print('First natural frequency [Hz]:', rom.omega[0] / (2 * np.pi))
 
-
-def Kc_builder(kc):
-	return np.array(
-		[-kc, kc] * (interface_idx // 2)
-		+ [kc, -kc] * (15 - interface_idx // 2)
-	)
-
-
+# Note: unlike the FE model, ROM1's odefun() applies K_c/K_i/K_p/R_c as
+# plain scalars broadcast across every piezo patch (no per-interface
+# alternating array like Basic_FE_sweeps' Ki_builder/Kc_builder). So the
+# swept Kc values below are used directly, with no builder function needed.
 BASE_PARAMS = dict(
-	K_p=0.025,
-	K_i=1800,
+	K_p=0.015,
+	K_i=1820,
 	K_c=3e10,
 	R_c=1e3,
-	amp = 50,
+	amp=50,
 )
 
 # =========================================================
@@ -153,27 +149,21 @@ f0 = 500
 f1 = 3500
 dt = 1 / max(f0, f1) / 50
 
+rtol = 1e-7
+atol = 1e-9
+
 # =========================================================
 # DEFINE SWEEP
 # =========================================================
-# amp_list = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4 ]) * 125
-
-# Kc_magnitudes =  np.array([8.00e9, 1.20e10 1.50e10, 1.80e10, 2.50e10, 2.75e10, 3.00e10]) #for hardening
-# Kc_magnitudes =  -np.array([ 8.00e9, 1.0e10, 1.20e10, 1.30e10, 1.4e10, 1.6e10, 1.8e10, 2.0e10 ]) #for softening
-
-Kc_soft =  -np.array([5.0e8, 1.0e9, 2.0e9, 4.00e9 , 8.00e9, 1.0e10, 1.20e10, 1.30e10, 1.4e10, 1.6e10, 1.8e10, 2.0e10 ]) 
-Kc_hard =  np.array([5e8, 1e9, 2.0e9, 4.0e9, 8.00e9, 1.20e10, 1.50e10, 1.80e10, 2.50e10, 2.75e10, 3.00e10]) 
+# Same Kc grid as Basic_FE_sweeps/generic_nD_sweep_SLURMarray.py, for a
+# direct ROM-vs-FE comparison at matched sweep points.
+Kc_soft = -np.array([5.0e8, 1.0e9, 2.0e9, 4.00e9, 8.00e9, 1.0e10, 1.20e10, 1.30e10, 1.4e10, 1.6e10, 1.8e10, 2.0e10])
+Kc_hard = np.array([5e8, 1e9, 2.0e9, 4.0e9, 8.00e9, 1.20e10, 1.50e10, 1.80e10, 2.50e10, 2.75e10, 3.00e10])
 
 sweep_spec = SweepSpec([
-	# SweepParam(
-	# 	key="amp",
-	# 	values=amp_list.tolist(),
-	# 	description="Excitation amplitude",
-	# ),
-
 	SweepParam(
 		key="K_c",
-		values=Kc_soft.tolist()[::-1]+Kc_hard.tolist(),
+		values=Kc_soft.tolist()[::-1] + Kc_hard.tolist(),
 		target="K_c",
 		description="nonlinear inductance",
 	),
@@ -196,10 +186,13 @@ sweep_spec = SweepSpec([
 # =========================================================
 OUTPUT_SPEC = {
 	"t": lambda out: out["t"],
-	"u_dot": lambda out: out["u_dot"],
+	"veloc": lambda out: out["veloc"],
+	"eta": lambda out: out["eta"],
+	"eta_dot": lambda out: out["eta_dot"],
+	"z": lambda out: out["z"],
 	"v": lambda out: out["v"],
-	"FRF": lambda out: out['spectral']['FRF'],
-	"freq": lambda out: out['spectral']['freq'],
+	"FRF": lambda out: out["FRF"],
+	"freq": lambda out: out["freq"],
 }
 
 # =========================================================
@@ -248,7 +241,6 @@ def run_single_simulation(
 	index,
 	sweep_entry,
 	base_params,
-	fe_params,
 	dt, t_end, f0, f1,
 	output_spec,
 	out_dir
@@ -260,33 +252,25 @@ def run_single_simulation(
 		f0_val = params.get("f0", f0)
 		f1_val = params.get("f1", f1)
 
-		fe = FE_module.PiezoBeamFE(fe_params)
-
 		def v_exc(t):
 			return amp * np.sin(
 				2 * np.pi * (f0_val + t * (f1_val - f0_val) / t_end) * t
 			)
 
-		ode = fe.build_ode_system(
-			j_exc=30,
-			K_c=params.get("K_c"),
-			K_i=params["K_i"],
-			K_p=params["K_p"],
-			R_c=params["R_c"],
-			v_exc=v_exc
-		)
+		t_eval = np.arange(0, t_end, dt)
 
-		out = FE_helpers.solve_newmark(
-			ode=ode,
-			dt=dt,
+		out = rom.run_time_sim(
+			v_exc=v_exc,
+			j_exc=30,
+			R_c=params["R_c"],
+			K_p=params["K_p"],
+			K_i=params["K_i"],
+			K_c=params.get("K_c"),
 			t_end=t_end,
-			beta=0.25,
-			gamma=0.5,
-			newton_tol=1e-6,
-			newton_maxiter=32,
-			x0=np.zeros(ode.M.shape[0]),
-			x_dot0=np.zeros(ode.M.shape[0]),
-			do_spectral=True
+			t_eval=t_eval,
+			x_eval=x_eval,
+			rtol=rtol,
+			atol=atol,
 		)
 
 		data = {k: fn(out) for k, fn in output_spec.items()}
@@ -351,7 +335,6 @@ status_dir.mkdir(parents=True, exist_ok=True)
 
 if array_id == 0:
 
-
 	CONFIG = {
 		"created_at": datetime.now().isoformat(),
 		"time": dict(dt=dt, t_end=t_end, f0=f0, f1=f1),
@@ -364,7 +347,8 @@ if array_id == 0:
 			}
 			for p in sweep_spec.params
 		],
-		"fe_params": to_jsonable(vars(params_fe)),
+		"rom_params": to_jsonable(vars(params_rom)),
+		"N_modes": N_modes,
 		"base_params": {
 			k: to_jsonable(v)
 			for k, v in BASE_PARAMS.items()
@@ -387,7 +371,6 @@ def run_and_store(index):
 		index,
 		sweep_entry,
 		BASE_PARAMS,
-		params_fe,
 		dt, t_end, f0, f1,
 		OUTPUT_SPEC,
 		local_dir

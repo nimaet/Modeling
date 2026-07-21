@@ -98,9 +98,11 @@ Required top-level keys:
 Required fields for each `results[i]`:
 
 - `index`: integer index into `sweep["grid"]`.
-- `sweep_entry`: the sweep values for this run, such as `amp` and `K_c`.
-- `params`: resolved model parameters used by the FE solver. If `K_c` is expanded from a scalar into a vector, store the vector here.
+- `sweep_entry`: the sweep values for this run, keyed by the sweep's `key` names (e.g. `amp`, `K_c`, or `freq`) — the raw swept value, not the resolved model parameter.
+- `params`: resolved model parameters used by the FE solver, keyed by `target` name. If `K_c` is expanded from a scalar into a vector, store the vector here. A single sweep key can resolve to more than one `params` entry (see `sweep_spec`/`target` below) — for example, sweeping `freq` for a single-tone excitation resolves into both `params["f0"]` and `params["f1"]`.
 - `data`: output arrays used for plotting and inspection.
+
+`sweep_entry` and `params` can disagree in key name: `sweep_entry["freq"]` is the swept value, while `params["f0"]`/`params["f1"]` are what the solver actually used. When grouping or labeling results, prefer `params` for the value actually simulated.
 
 Preferred `data` fields:
 
@@ -110,6 +112,23 @@ Preferred `data` fields:
 - `Y`: optional spatial spectral response, observed shape `(n_freq, n_nodes)`.
 - `u_dot`: optional velocity response. If `FRF` is absent, plotting can derive a curve from `u_dot`.
 - `v`, `t`: optional time-domain data when needed.
+
+## `config.json` / `sweep_spec` Contract
+
+`generic_nD_sweep_SLURMarray.py` writes a `config.json` alongside the per-simulation `npz/` outputs (once, from array task 0). `collect_nD_sweep_results.py` reads it to rebuild `sweep["keys"]`/`sweep["grid"]` and to align each `npz` file back to its intended sweep entry. Its `sweep_spec` field is a list of:
+
+```python
+{
+    "key": "freq",             # name used in sweep_entry / grid combos
+    "values": [1000.0, ...],   # swept values, in key order
+    "target": ["f0", "f1"],    # where resolved values land in params; str or list[str]
+    "description": "Excitation frequency (single-tone)",
+}
+```
+
+- `target` is usually a single string (e.g. `"K_c"`), but may be a list of strings so one swept key drives several `params` entries at once. This is how frequency sweeps work: one `freq` value broadcasts to both `params["f0"]` and `params["f1"]`, collapsing the chirp excitation `v_exc` into a constant-frequency sine at that value.
+- `config["time"]` (`dt`, `t_end`, `f0`, `f1`) records the *default* excitation window used when a run has no frequency sweep param (or as the fallback bounds for `f0`/`f1` when only one of them is swept). `dt` is chosen to resolve whichever is larger: the default `f0`/`f1` or the highest frequency value actually present in the sweep grid.
+- `build_grid_from_config` (in `collect_nD_sweep_results.py`) regenerates the grid using `key`/`values` only — it does not need to know about `target` — so `sweep_entry` in `results.pkl` always uses the sweep's `key` names, never the resolved `target` names.
 
 ## Legacy Compatibility Format
 
@@ -344,6 +363,7 @@ Before saving a run, check the following:
 - Amplitudes within each Kc group are sorted before plotting if line/color order matters.
 - Failed simulations are recorded in `failed`; do not silently drop them.
 - Large arrays stay as NumPy arrays in pickle. JSON sidecar files should store only metadata or JSON-converted summaries.
+- If a `sweep_spec` entry's `target` is a list, none of its targets collide with another param's target(s) — `SweepSpec.validate` raises on duplicate targets across the flattened set.
 
 ## Task Brief For Another AI
 
