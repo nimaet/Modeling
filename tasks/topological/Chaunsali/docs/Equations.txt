@@ -1,0 +1,690 @@
+\section{Locally Resonant Chain with Nonlinear Attachments}
+
+We consider a main chain with linear nearest-neighbor springs and nonlinear local resonators.
+The displacement of the main mass is denoted by \(u\), while the displacement of the local
+attachment is denoted by \(\eta\). The relative displacement in the local attachment is
+
+\[
+r_n = \eta_n - u_n .
+\]
+
+We use nondimensional time \(\tau\), nondimensional displacements, and define
+
+\[
+\mu = \frac{m_a}{m}, 
+\qquad 
+\kappa = \frac{k_a}{k},
+\qquad
+\Gamma = \frac{k_3 a^2}{k}.
+\]
+
+%----------------------------------------------------------
+\section{One Site per Unit Cell}
+
+\subsection{Discrete Equations}
+
+For a one-site unit cell, the nondimensional equations of motion are
+
+\[
+\ddot u_n
+=
+u_{n+1}+u_{n-1}-2u_n
++
+\kappa(\eta_n-u_n)
++
+\Gamma(\eta_n-u_n)^3,
+\]
+
+\[
+\mu \ddot \eta_n
+=
+-\kappa(\eta_n-u_n)
+-
+\Gamma(\eta_n-u_n)^3.
+\]
+
+Equivalently, defining
+
+\[
+r_n = \eta_n-u_n,
+\]
+
+we write
+
+\[
+\ddot u_n
+=
+u_{n+1}+u_{n-1}-2u_n
++
+\kappa r_n
++
+\Gamma r_n^3,
+\]
+
+\[
+\mu \ddot \eta_n
+=
+-\kappa r_n
+-
+\Gamma r_n^3.
+\]
+
+\subsection{Linear Bloch Analysis}
+
+For the linear problem, we neglect the cubic term and use
+
+\[
+u_n(\tau)=U e^{i(qn-\Omega \tau)},
+\qquad
+\eta_n(\tau)=H e^{i(qn-\Omega \tau)}.
+\]
+
+Substitution gives
+
+\[
+\left[
+4\sin^2\left(\frac{q}{2}\right)+\kappa-\Omega^2
+\right]U
+-
+\kappa H
+=0,
+\]
+
+\[
+-\kappa U
++
+\left[
+\kappa-\mu\Omega^2
+\right]H
+=0.
+\]
+
+Therefore the Bloch eigenvalue problem is
+
+\[
+\begin{bmatrix}
+4\sin^2\left(\frac{q}{2}\right)+\kappa & -\kappa\\
+-\kappa & \kappa
+\end{bmatrix}
+\begin{bmatrix}
+U\\
+H
+\end{bmatrix}
+=
+\Omega^2
+\begin{bmatrix}
+1 & 0\\
+0 & \mu
+\end{bmatrix}
+\begin{bmatrix}
+U\\
+H
+\end{bmatrix}.
+\]
+
+The dispersion relation is obtained from
+
+\[
+\det
+\begin{bmatrix}
+4\sin^2\left(\frac{q}{2}\right)+\kappa-\Omega^2 & -\kappa\\
+-\kappa & \kappa-\mu\Omega^2
+\end{bmatrix}
+=0.
+\]
+
+Thus,
+
+\[
+\left[
+4\sin^2\left(\frac{q}{2}\right)+\kappa-\Omega^2
+\right]
+\left[
+\kappa-\mu\Omega^2
+\right]
+-\kappa^2
+=0.
+\]
+
+\subsection{Homogenized Envelope Equations}
+
+We use the slowly varying Bloch ansatz
+
+\[
+u_n(\tau)
+=
+\frac{1}{2}
+\left[
+U(z,t)e^{i(q_0 n+\Omega \tau)}
++
+U^*(z,t)e^{-i(q_0 n+\Omega \tau)}
+\right],
+\]
+
+\[
+\eta_n(\tau)
+=
+\frac{1}{2}
+\left[
+H(z,t)e^{i(q_0 n+\Omega \tau)}
++
+H^*(z,t)e^{-i(q_0 n+\Omega \tau)}
+\right],
+\]
+
+where
+
+\[
+z=n,
+\]
+
+and \(U(z,t)\), \(H(z,t)\) are slowly varying envelopes. Define
+
+\[
+R(z,t)=H(z,t)-U(z,t).
+\]
+
+Keeping only the fundamental harmonic gives
+
+\[
+(\eta_n-u_n)^3
+\rightarrow
+\frac{3}{4}|R|^2R e^{i(q_0n+\Omega \tau)}
++
+\text{c.c.}
+\]
+
+The discrete Laplacian is expanded as
+
+\[
+u_{n+1}+u_{n-1}-2u_n
+\rightarrow
+\left[
+-4\sin^2\left(\frac{q_0}{2}\right)U
++
+2i\sin(q_0)U_z
++
+\cos(q_0)U_{zz}
+\right]
+e^{i(q_0 n+\Omega \tau)}
++
+\text{c.c.}
+\]
+
+Therefore the homogenized envelope equations are
+
+\[
+2i\Omega U_t
+=
+\left[
+\Omega^2
+-\kappa
+-4\sin^2\left(\frac{q_0}{2}\right)
+\right]U
++
+2i\sin(q_0)U_z
++
+\cos(q_0)U_{zz}
++
+\kappa H
++
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+2i\mu\Omega H_t
+=
+\left[
+\mu\Omega^2-\kappa
+\right]H
++
+\kappa U
+-
+\frac{3}{4}\Gamma |H-U|^2(H-U).
+\]
+
+At the Brillouin-zone edge \(q_0=\pi\), we have
+
+\[
+\sin(q_0)=0,
+\qquad
+\cos(q_0)=-1,
+\]
+
+and the equations reduce to
+
+\[
+2i\Omega U_t
+=
+\left[
+\Omega^2-\kappa-4
+\right]U
+-
+U_{zz}
++
+\kappa H
++
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+2i\mu\Omega H_t
+=
+\left[
+\mu\Omega^2-\kappa
+\right]H
++
+\kappa U
+-
+\frac{3}{4}\Gamma |H-U|^2(H-U).
+\]
+
+%----------------------------------------------------------
+\section{Two Sites per Unit Cell}
+
+\subsection{Discrete Equations}
+
+Now we take two sites per unit cell,
+
+\[
+(u_{1,n},\eta_{1,n}),
+\qquad
+(u_{2,n},\eta_{2,n}).
+\]
+
+The relative displacements are
+
+\[
+r_{1,n}=\eta_{1,n}-u_{1,n},
+\qquad
+r_{2,n}=\eta_{2,n}-u_{2,n}.
+\]
+
+We assign a stiffening local attachment to site \(1\) and a softening local attachment to site \(2\):
+
+\[
+f_1(r)=\kappa(1-\gamma)r+\Gamma r^3,
+\]
+
+\[
+f_2(r)=\kappa(1+\gamma)r-\Gamma r^3.
+\]
+
+The nondimensional equations of motion are
+
+\[
+\ddot u_{1,n}
+=
+u_{2,n-1}+u_{2,n}-2u_{1,n}
++
+f_1(\eta_{1,n}-u_{1,n}),
+\]
+
+\[
+\mu \ddot \eta_{1,n}
+=
+-f_1(\eta_{1,n}-u_{1,n}),
+\]
+
+\[
+\ddot u_{2,n}
+=
+u_{1,n}+u_{1,n+1}-2u_{2,n}
++
+f_2(\eta_{2,n}-u_{2,n}),
+\]
+
+\[
+\mu \ddot \eta_{2,n}
+=
+-f_2(\eta_{2,n}-u_{2,n}).
+\]
+
+Explicitly,
+
+\[
+\ddot u_{1,n}
+=
+u_{2,n-1}+u_{2,n}-2u_{1,n}
++
+\kappa(1-\gamma)(\eta_{1,n}-u_{1,n})
++
+\Gamma(\eta_{1,n}-u_{1,n})^3,
+\]
+
+\[
+\mu \ddot \eta_{1,n}
+=
+-\kappa(1-\gamma)(\eta_{1,n}-u_{1,n})
+-
+\Gamma(\eta_{1,n}-u_{1,n})^3,
+\]
+
+\[
+\ddot u_{2,n}
+=
+u_{1,n}+u_{1,n+1}-2u_{2,n}
++
+\kappa(1+\gamma)(\eta_{2,n}-u_{2,n})
+-
+\Gamma(\eta_{2,n}-u_{2,n})^3,
+\]
+
+\[
+\mu \ddot \eta_{2,n}
+=
+-\kappa(1+\gamma)(\eta_{2,n}-u_{2,n})
++
+\Gamma(\eta_{2,n}-u_{2,n})^3.
+\]
+
+\subsection{Linear Bloch Analysis}
+
+For the linear problem, use
+
+\[
+u_{1,n}=Ue^{i(qn-\Omega \tau)},
+\qquad
+u_{2,n}=Ve^{i(qn-\Omega \tau)},
+\]
+
+\[
+\eta_{1,n}=He^{i(qn-\Omega \tau)},
+\qquad
+\eta_{2,n}=Je^{i(qn-\Omega \tau)}.
+\]
+
+Define
+
+\[
+\kappa_1=\kappa(1-\gamma),
+\qquad
+\kappa_2=\kappa(1+\gamma).
+\]
+
+Then the Bloch eigenvalue problem is
+
+\[
+\mathbf{K}(q)
+\begin{bmatrix}
+U\\
+V\\
+H\\
+J
+\end{bmatrix}
+=
+\Omega^2
+\mathbf{M}
+\begin{bmatrix}
+U\\
+V\\
+H\\
+J
+\end{bmatrix},
+\]
+
+where
+
+\[
+\mathbf{M}
+=
+\begin{bmatrix}
+1 & 0 & 0 & 0\\
+0 & 1 & 0 & 0\\
+0 & 0 & \mu & 0\\
+0 & 0 & 0 & \mu
+\end{bmatrix},
+\]
+
+and
+
+\[
+\mathbf{K}(q)
+=
+\begin{bmatrix}
+2+\kappa_1 & -(1+e^{-iq}) & -\kappa_1 & 0\\
+-(1+e^{iq}) & 2+\kappa_2 & 0 & -\kappa_2\\
+-\kappa_1 & 0 & \kappa_1 & 0\\
+0 & -\kappa_2 & 0 & \kappa_2
+\end{bmatrix}.
+\]
+
+The dispersion relation is
+
+\[
+\det\left[
+\mathbf{K}(q)-\Omega^2\mathbf{M}
+\right]
+=0.
+\]
+
+\subsection{Homogenized Envelope Equations}
+
+We now use the zone-boundary ansatz
+
+\[
+u_{1,n}
+=
+\frac{(-1)^n}{2}
+\left[
+U(z,t)e^{i\Omega \tau}
++
+U^*(z,t)e^{-i\Omega \tau}
+\right],
+\]
+
+\[
+u_{2,n}
+=
+\frac{(-1)^n}{2}
+\left[
+V(z,t)e^{i\Omega \tau}
++
+V^*(z,t)e^{-i\Omega \tau}
+\right],
+\]
+
+\[
+\eta_{1,n}
+=
+\frac{(-1)^n}{2}
+\left[
+H(z,t)e^{i\Omega \tau}
++
+H^*(z,t)e^{-i\Omega \tau}
+\right],
+\]
+
+\[
+\eta_{2,n}
+=
+\frac{(-1)^n}{2}
+\left[
+J(z,t)e^{i\Omega \tau}
++
+J^*(z,t)e^{-i\Omega \tau}
+\right],
+\]
+
+where
+
+\[
+z=n.
+\]
+
+Define the relative-motion envelopes
+
+\[
+R_1=H-U,
+\qquad
+R_2=J-V.
+\]
+
+The cubic terms are approximated by their fundamental harmonics:
+
+\[
+r_{1,n}^3
+\rightarrow
+\frac{3}{4}|R_1|^2R_1 e^{i\Omega \tau}
++
+\text{c.c.},
+\]
+
+\[
+r_{2,n}^3
+\rightarrow
+\frac{3}{4}|R_2|^2R_2 e^{i\Omega \tau}
++
+\text{c.c.}
+\]
+
+Using the continuum approximations
+
+\[
+V(z-1,t)=V(z,t)-V_z(z,t),
+\]
+
+\[
+U(z+1,t)=U(z,t)+U_z(z,t),
+\]
+
+we obtain
+
+\[
+u_{2,n-1}+u_{2,n}-2u_{1,n}
+\rightarrow
+\left[
+V_z-2U
+\right]
+\frac{(-1)^n}{2}e^{i\Omega \tau}
++
+\text{c.c.},
+\]
+
+\[
+u_{1,n}+u_{1,n+1}-2u_{2,n}
+\rightarrow
+\left[
+-U_z-2V
+\right]
+\frac{(-1)^n}{2}e^{i\Omega \tau}
++
+\text{c.c.}
+\]
+
+Thus the homogenized envelope equations are
+
+\[
+2i\Omega U_t
+=
+\left[
+\Omega^2-2-\kappa(1-\gamma)
+\right]U
++
+V_z
++
+\kappa(1-\gamma)H
++
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+2i\mu\Omega H_t
+=
+\left[
+\mu\Omega^2-\kappa(1-\gamma)
+\right]H
++
+\kappa(1-\gamma)U
+-
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+2i\Omega V_t
+=
+\left[
+\Omega^2-2-\kappa(1+\gamma)
+\right]V
+-
+U_z
++
+\kappa(1+\gamma)J
+-
+\frac{3}{4}\Gamma |J-V|^2(J-V),
+\]
+
+\[
+2i\mu\Omega J_t
+=
+\left[
+\mu\Omega^2-\kappa(1+\gamma)
+\right]J
++
+\kappa(1+\gamma)V
++
+\frac{3}{4}\Gamma |J-V|^2(J-V).
+\]
+
+%----------------------------------------------------------
+\section{Steady-State Homogenized Equations}
+
+For steady-state envelopes,
+
+\[
+U_t=V_t=H_t=J_t=0.
+\]
+
+Therefore the two-site homogenized system becomes
+
+\[
+0
+=
+\left[
+\Omega^2-2-\kappa(1-\gamma)
+\right]U
++
+V_z
++
+\kappa(1-\gamma)H
++
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+0
+=
+\left[
+\mu\Omega^2-\kappa(1-\gamma)
+\right]H
++
+\kappa(1-\gamma)U
+-
+\frac{3}{4}\Gamma |H-U|^2(H-U),
+\]
+
+\[
+0
+=
+\left[
+\Omega^2-2-\kappa(1+\gamma)
+\right]V
+-
+U_z
++
+\kappa(1+\gamma)J
+-
+\frac{3}{4}\Gamma |J-V|^2(J-V),
+\]
+
+\[
+0
+=
+\left[
+\mu\Omega^2-\kappa(1+\gamma)
+\right]J
++
+\kappa(1+\gamma)V
++
+\frac{3}{4}\Gamma |J-V|^2(J-V).
+\]

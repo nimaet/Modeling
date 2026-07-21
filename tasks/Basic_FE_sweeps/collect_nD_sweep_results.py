@@ -1,15 +1,25 @@
 import warnings
 warnings.filterwarnings("ignore", category=DeprecationWarning)
 
-import argparse
 import json
 import pickle
 import os
 from datetime import datetime
-from itertools import product
 from pathlib import Path
 
 import numpy as np
+
+
+# =========================================================
+# LOCAL CONFIGURATION
+# =========================================================
+# Set these here instead of passing command-line arguments.
+# Update ARRAY_JOB_ID when collecting a different sweep run.
+SAVE_PREFIX = "Duffing_hardening"
+SIM_DAT_DIR = Path.cwd() / "sim_dat"
+ARRAY_JOB_ID = "10896438"
+RUN_DIR = None
+PROGRESS_EVERY = 1
 
 
 def to_jsonable(obj):
@@ -27,6 +37,8 @@ def to_jsonable(obj):
 
 
 def build_grid_from_config(config):
+    from itertools import product
+
     sweep_spec = config.get("sweep_spec", [])
     keys = [p["key"] for p in sweep_spec]
     value_lists = [p.get("values", []) for p in sweep_spec]
@@ -37,62 +49,20 @@ def build_grid_from_config(config):
 
     return keys, grid
 
+def resolve_run_dir():
+    if RUN_DIR is not None:
+        return Path(RUN_DIR).resolve()
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description="Aggregate SLURM array sweep outputs into results.pkl and errors.json"
-    )
-    parser.add_argument(
-        "--run-dir",
-        type=Path,
-        default=None,
-        help="Absolute or relative run directory (e.g., sim_dat/NES_1234567)",
-    )
-    parser.add_argument(
-        "--array-job-id",
-        default=None,
-        help="Array job id used in run folder naming (NES_<array_job_id>)",
-    )
-    parser.add_argument(
-        "--save-prefix",
-        default="NES",
-        help="Run folder prefix used by workers",
-    )
-    parser.add_argument(
-        "--sim-dat-dir",
-        type=Path,
-        default=Path.cwd() / "sim_dat",
-        help="Parent directory containing run folders",
-    )
-    parser.add_argument(
-        "--progress-every",
-        type=int,
-        default=1,
-        help="Print progress every N status files processed",
-    )
-    return parser.parse_args()
-
-
-def resolve_run_dir(args):
-    if args.run_dir is not None:
-        return args.run_dir.resolve()
-
-    array_job_id = (
-        args.array_job_id
-        or os.environ.get("SWEEP_ARRAY_JOB_ID")
-        or os.environ.get("SLURM_ARRAY_JOB_ID")
-    )
-    if not array_job_id:
+    if not ARRAY_JOB_ID:
         raise RuntimeError(
-            "Could not determine run directory. Provide --run-dir or --array-job-id."
+            "Could not determine run directory. Set RUN_DIR or ARRAY_JOB_ID in the script."
         )
 
-    return (args.sim_dat_dir / f"{args.save_prefix}_{array_job_id}").resolve()
+    return (SIM_DAT_DIR / f"{SAVE_PREFIX}_{ARRAY_JOB_ID}").resolve()
 
 
 def main():
-    args = parse_args()
-    run_dir = resolve_run_dir(args)
+    run_dir = resolve_run_dir()
     config_path = run_dir / "config.json"
     npz_dir = run_dir / "npz"
     status_dir = run_dir / "status"
@@ -151,7 +121,7 @@ def main():
             }
         )
 
-        if idx % max(1, args.progress_every) == 0 or idx == len(status_files):
+        if idx % max(1, PROGRESS_EVERY) == 0 or idx == len(status_files):
             print(
                 f"Progress: {idx}/{len(status_files)} status files | "
                 f"success={len(successful)} failed={len(failed)}"

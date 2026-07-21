@@ -1,0 +1,515 @@
+\documentclass[11pt]{article}
+
+\usepackage[margin=1in]{geometry}
+\usepackage{amsmath,amssymb,bm}
+\usepackage{booktabs}
+\usepackage{enumitem}
+\usepackage{xurl}
+\usepackage[hidelinks]{hyperref}
+
+\setlist[itemize]{leftmargin=1.4em}
+\setlist[enumerate]{leftmargin=1.6em}
+\newcommand{\dd}{\mathrm{d}}
+\newcommand{\jj}{\mathrm{j}}
+\newcommand{\cc}{\mathrm{c.c.}}
+\newcommand{\Heav}{\mathrm{H}}
+
+\title{Piezoelectric Energy Harvester: Modeling Assumptions, ROM Derivation, and Slow-Flow Analysis}
+\author{Working note for collaborators}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section*{Purpose}
+
+This note organizes the reasoning path behind the piezoelectric energy
+harvesting model used in the weekly meeting slides and MATLAB simulations.  It
+is not intended to be a polished paper derivation.  The goal is to make the
+modeling choices, reduction steps, and analysis pipeline clear enough that a
+collaborator can check the logic and connect the equations to the simulation
+files.
+
+\paragraph{Main sources.}
+The derivation below is organized from the archived Word notes
+\path{Old_sources/piezoelectric beam harvester.docx},
+\path{Old_sources/ROM - send to Mohammod.docx},
+\path{Old_sources/ROM - multiple - send to Mohammod.docx},
+\path{Old_sources/Damping analysis.docx}, and the weekly meeting slides in
+\path{docs/weekly_meeting/}.  The corresponding cleaned MATLAB archive is in
+\path{simulations/}.
+
+\section{Physical Picture and Assumptions}
+
+\subsection{Beam and Electrical Paths}
+
+The physical system is a cantilever piezoelectric beam under prescribed base
+motion.  Two piezoelectric electrical paths are used:
+
+\begin{enumerate}
+  \item \textbf{Path 1: harvester path.}  This path is connected to a shunted
+  electrical circuit.  It is the path from which harvested electrical energy is
+  measured.  The harvester circuit contains capacitance, resistance, linear
+  inductance, and an effective cubic nonlinear inductive term.
+  \item \textbf{Path 2: modulator path.}  This path is not solved as an
+  autonomous circuit in the reduced model.  Its voltage is prescribed and used
+  as a controllable input.  In the main simulations it is taken near the base
+  excitation frequency so that it slowly modulates the effective forcing.
+\end{enumerate}
+
+The first path is therefore a dynamical electrical degree of freedom.  The
+second path is an externally imposed actuation/modulation signal.
+
+\subsection{Mechanical Assumptions}
+
+\begin{itemize}
+  \item The beam is modeled as an Euler-Bernoulli beam.
+  \item The total transverse displacement is decomposed into base motion plus
+  relative beam deflection:
+  \begin{equation}
+    w(x,t)=w_b(t)+w_{\mathrm{rel}}(x,t).
+  \end{equation}
+  \item The base motion is prescribed.  The archived notes often write
+  $w_b(t)=g(t)$, and for harmonic studies use
+  \begin{equation}
+    w_b(t)=w_0 e^{\jj \omega_b t}+\cc.
+  \end{equation}
+  \item In the initial ROM derivation, structural damping of the beam is
+  neglected.  A later extension includes a modal damping ratio $\xi$.
+  \item The first ROM uses one mechanical mode:
+  \begin{equation}
+    w_{\mathrm{rel}}(x,t)=\sum_r \eta_r(t)\phi_r(x)
+    \approx \eta_1(t)\phi_1(x).
+  \end{equation}
+  \item The mode shape is mass-normalized:
+  \begin{equation}
+    \int_0^l m\phi_1^2(x)\,\dd x = 1.
+  \end{equation}
+\end{itemize}
+
+\paragraph{Important correction.}
+The earliest ROM used the analytic first bending mode of a plain cantilever.
+The January 17 meeting identified that this approximation shifted the relevant
+electromechanical frequency enough to cause disagreement with the full beam
+simulation.  The corrected ROM uses a mode computed from the FEM eigenanalysis
+with the piezoelectric/electrical coupling included.  In the cleaned MATLAB
+archive this is the role of:
+
+\begin{itemize}
+  \item \texttt{simulations/fem/eigenanalysis\_corrected\_single\_mode.m}
+  \item \texttt{simulations/fem/FEM\_modes\_norm.mat}
+  \item \texttt{simulations/rom/corrected\_fem\_mode\_rom.m}
+\end{itemize}
+
+\section{From Beam-Circuit System to a Two-DOF ROM}
+
+\subsection{Beam Moment and Governing Equation}
+
+The bending moment is modeled as the elastic moment plus two localized
+piezoelectric moment contributions:
+\begin{equation}
+  M =
+  -YI\frac{\partial^2 w_{\mathrm{rel}}}{\partial x^2}
+  +\vartheta v_1(t)
+    \left[\Heav(x)-\Heav\!\left(x-\frac{l}{2}\right)\right]
+  +\vartheta v_2(t)
+    \left[\Heav\!\left(x-\frac{l}{2}\right)-\Heav(x-l)\right].
+\end{equation}
+Here $v_1$ is the harvester-path voltage and $v_2$ is the modulator-path
+voltage.  The bending stiffness and piezoelectric coupling coefficient used in
+the archived notes are
+\begin{align}
+  YI &=
+  \frac{2b}{3}\left[
+    Y_s\frac{h_s^3}{8}
+    +c_{11}^{E}\left(\left(h_p+\frac{h_s}{2}\right)^3-\frac{h_s^3}{8}\right)
+  \right],\\
+  \vartheta_{\mathrm{series}}
+  &= \frac{e_{31}b}{2}(h_p+h_s).
+\end{align}
+
+Neglecting beam damping in the main derivation gives
+\begin{equation}
+  -\frac{\partial^2 M}{\partial x^2}
+  +m\frac{\partial^2 w_{\mathrm{rel}}}{\partial t^2}
+  =
+  -m\ddot w_b(t).
+\end{equation}
+
+\subsection{Single-Mode Projection}
+
+Projecting onto the first mass-normalized mode gives
+\begin{equation}
+  \ddot \eta_1+\omega_1^2\eta_1-\chi_{11}v_1-\chi_{12}v_2=f_1(t),
+  \label{eq:dim_mech_voltage}
+\end{equation}
+where
+\begin{align}
+  \omega_1^2
+  &=\int_0^l YI\,\phi_1^{(4)}(x)\phi_1(x)\,\dd x,\\
+  \chi_{11}
+  &=\vartheta\int_0^{l/2}\phi_1''(x)\,\dd x
+    =\vartheta\phi_1'\!\left(\frac{l}{2}\right),\\
+  \chi_{12}
+  &=\vartheta\int_{l/2}^{l}\phi_1''(x)\,\dd x
+    =\vartheta\left[\phi_1'(l)-\phi_1'\!\left(\frac{l}{2}\right)\right],\\
+  f_1(t)
+  &=-m\ddot w_b(t)\int_0^l \phi_1(x)\,\dd x.
+\end{align}
+
+The analytic plain-cantilever mode used in the initial notes is
+\begin{equation}
+  \phi_r(x)=\frac{1}{\sqrt{ml}}\left[
+  \cos\frac{\lambda_r x}{l}-\cosh\frac{\lambda_r x}{l}
+  +\frac{\sin\lambda_r-\sinh\lambda_r}{\cos\lambda_r+\cosh\lambda_r}
+  \left(\sin\frac{\lambda_r x}{l}-\sinh\frac{\lambda_r x}{l}\right)
+  \right],
+\end{equation}
+with
+\begin{equation}
+  1+\cos\lambda_r\cosh\lambda_r=0.
+\end{equation}
+In the corrected model, $\phi_1$, $\omega_1$, $\chi_{11}$, $\chi_{12}$, and
+$\int_0^l\phi_1\,\dd x$ should be taken from the FEM-informed mode data rather
+than from the plain beam formula.
+
+\subsection{Harvester Circuit}
+
+Let $\lambda_1$ be the flux linkage in the harvester path so that
+$v_1=\dot\lambda_1$.  The harvester circuit equation is
+\begin{equation}
+  C_p\ddot\lambda_1
+  +\frac{1}{R_1}\dot\lambda_1
+  +\frac{1}{L}\lambda_1
+  +\frac{1}{L_c}\lambda_1^3
+  +\chi_{11}\dot\eta_1
+  =0.
+  \label{eq:dim_circuit}
+\end{equation}
+
+Using $v_1=\dot\lambda_1$, the mechanical equation becomes
+\begin{equation}
+  \ddot \eta_1+\omega_1^2\eta_1-\chi_{11}\dot\lambda_1
+  =
+  \chi_{12}v_2(t)+f_1(t).
+  \label{eq:dim_mech_flux}
+\end{equation}
+
+Equations~\eqref{eq:dim_circuit} and \eqref{eq:dim_mech_flux} form the
+two-degree-of-freedom reduced system.  The two solved DOFs are the structural
+modal coordinate $\eta_1$ and the harvester flux linkage $\lambda_1$.  The
+modulator signal $v_2(t)$ is prescribed.
+
+\section{Normalization}
+
+The archived notes use
+\begin{equation}
+  \lambda_0=\sqrt{L_cC_p\omega_1^2},\qquad
+  \eta_0=\lambda_0\sqrt{C_p},\qquad
+  t_0=\frac{1}{\omega_1},\qquad
+  T=\frac{t}{t_0}.
+\end{equation}
+Define dimensionless variables
+\begin{equation}
+  \Lambda_1=\frac{\lambda_1}{\lambda_0},
+  \qquad
+  H_1=\frac{\eta_1}{\eta_0}.
+\end{equation}
+The dimensionless parameters are
+\begin{equation}
+  \zeta=\frac{1}{C_pR_1\omega_1},\qquad
+  \Omega_t=\frac{\omega_t}{\omega_1},\qquad
+  \omega_t^2=\frac{1}{C_pL},\qquad
+  \Theta=\frac{\chi_{11}}{\omega_1\sqrt{C_p}}.
+\end{equation}
+
+For harmonic base excitation and prescribed modulation voltage,
+\begin{equation}
+  w_b(t)=w_0 e^{\jj\omega_b t}+\cc,
+  \qquad
+  v_2(t)=v_0 e^{\jj\omega_v t}+\cc,
+\end{equation}
+the normalized forcing amplitudes are
+\begin{align}
+  F_b
+  &=
+  \frac{m\omega_b^2w_0}{\omega_1^2\eta_0}
+  \int_0^l\phi_1(x)\,\dd x,\\
+  F_v
+  &=
+  \frac{\Theta\chi_{12}v_0}{\chi_{11}\omega_1\lambda_0}.
+\end{align}
+
+The main normalized two-DOF ROM is therefore
+\begin{align}
+  H_1''+H_1-\Theta\Lambda_1'
+  &=
+  F_b e^{\jj\Omega_bT}+F_v e^{\jj\Omega_vT}+\cc,
+  \label{eq:nondim_mech}\\
+  \Lambda_1''
+  +\zeta\Lambda_1'
+  +\Omega_t^2\Lambda_1
+  +\Lambda_1^3
+  +\Theta H_1'
+  &=0,
+  \label{eq:nondim_circuit}
+\end{align}
+where primes denote derivatives with respect to $T$ and
+$\Omega_b=\omega_b/\omega_1$, $\Omega_v=\omega_v/\omega_1$.
+
+\paragraph{Optional structural damping.}
+For damping analysis, the structural equation is extended to
+\begin{equation}
+  H_1''+2\xi H_1'+H_1-\Theta\Lambda_1'
+  =
+  F e^{\jj\Omega_fT}+\cc.
+  \label{eq:damped_mech}
+\end{equation}
+
+\section{Slow-Flow Analysis for the Two-DOF System}
+
+\subsection{Slowly Varying Effective Forcing}
+
+When the base and modulator frequencies are close, the forcing can be viewed as
+a carrier at $\Omega_f\approx \Omega_b$ with a slowly varying envelope:
+\begin{equation}
+  F_b e^{\jj\Omega_bT}+F_v e^{\jj\Omega_vT}
+  =
+  \left(F_b+F_v e^{\jj(\Omega_v-\Omega_b)T}\right)e^{\jj\Omega_bT}.
+\end{equation}
+For the frozen-envelope analysis, write this as
+\begin{equation}
+  F e^{\jj\Omega_fT}+\cc,
+\end{equation}
+where $F$ is treated as slowly varying relative to the carrier oscillation.
+
+\subsection{Complex Amplitude Variables}
+
+Define the complex amplitude variables
+\begin{equation}
+  \psi_H = H_1' + \jj\Omega_f H_1,\qquad
+  \psi_\Lambda = \Lambda_1' + \jj\Omega_f \Lambda_1.
+\end{equation}
+Then
+\begin{equation}
+  H_1'=\frac{\psi_H+\overline{\psi_H}}{2},\qquad
+  H_1=\frac{\psi_H-\overline{\psi_H}}{2\jj\Omega_f},
+\end{equation}
+and similarly for $\Lambda_1$.  Assume
+\begin{equation}
+  \psi_H=\varphi_H e^{\jj\Omega_fT},\qquad
+  \psi_\Lambda=\varphi_\Lambda e^{\jj\Omega_fT},
+\end{equation}
+where $\varphi_H$ and $\varphi_\Lambda$ vary slowly.
+
+Keeping only the resonant $e^{\jj\Omega_fT}$ terms gives the slow-flow system
+\begin{align}
+  \dot\varphi_H
+  +\frac{1-\Omega_f^2}{2\jj\Omega_f}\varphi_H
+  -\frac{\Theta}{2}\varphi_\Lambda
+  &=F,
+  \label{eq:slow_h}\\
+  \dot\varphi_\Lambda
+  +\frac{\zeta}{2}\varphi_\Lambda
+  +\frac{\Omega_t^2-\Omega_f^2}{2\jj\Omega_f}\varphi_\Lambda
+  -\frac{3}{8\Omega_f^3}\jj |\varphi_\Lambda|^2\varphi_\Lambda
+  +\frac{\Theta}{2}\varphi_H
+  &=0.
+  \label{eq:slow_l}
+\end{align}
+
+With structural damping $\xi$, equation~\eqref{eq:slow_h} becomes
+\begin{equation}
+  \dot\varphi_H
+  +\left(\xi+\frac{1-\Omega_f^2}{2\jj\Omega_f}\right)\varphi_H
+  -\frac{\Theta}{2}\varphi_\Lambda
+  =F.
+  \label{eq:slow_h_damped}
+\end{equation}
+
+\section{Steady-State Cubic and Hysteresis}
+
+\subsection{No Structural Damping}
+
+At steady state, eliminate $\varphi_H$ from
+\eqref{eq:slow_h}--\eqref{eq:slow_l}.  The result can be written
+\begin{equation}
+  A\varphi_\Lambda+C|\varphi_\Lambda|^2\varphi_\Lambda=B,
+  \label{eq:complex_cubic}
+\end{equation}
+with
+\begin{align}
+  A
+  &=
+  \frac{\zeta}{2}\frac{1-\Omega_f^2}{2\jj\Omega_f}
+  -\frac{(\Omega_t^2-\Omega_f^2)(1-\Omega_f^2)}{4\Omega_f^2}
+  +\frac{\Theta^2}{4},\\
+  B&=-\frac{\Theta}{2}F,\\
+  C&=-\frac{3(1-\Omega_f^2)}{16\Omega_f^4}.
+\end{align}
+
+Taking the squared magnitude gives the real cubic relation
+\begin{equation}
+  C^2\rho^3
+  +2\operatorname{Re}(A)C\rho^2
+  +|A|^2\rho
+  =
+  |B|^2,
+  \qquad
+  \rho=|\varphi_\Lambda|^2.
+  \label{eq:real_cubic}
+\end{equation}
+This is the algebraic equation used to plot the hysteresis curve and determine
+stable/unstable branches.
+
+\subsection{With Structural Damping}
+
+With structural damping, define
+\begin{equation}
+  D=\xi+\frac{1-\Omega_f^2}{2\jj\Omega_f}.
+\end{equation}
+The same cubic form~\eqref{eq:complex_cubic} holds, but with
+\begin{align}
+  A
+  &=
+  \frac{\zeta}{2}D
+  +\frac{\Omega_t^2-\Omega_f^2}{2\jj\Omega_f}D
+  +\frac{\Theta^2}{4},\\
+  B&=-\frac{\Theta}{2}F,\\
+  C&=-\frac{3}{8\Omega_f^3}\jj D.
+\end{align}
+
+\section{Linear Stability of a Slow-Flow Branch}
+
+Let a steady solution be
+$(\varphi_{H,0},\varphi_{\Lambda,0})$.  Perturb it as
+\begin{equation}
+  \varphi_H=\varphi_{H,0}+\delta_H,\qquad
+  \varphi_\Lambda=\varphi_{\Lambda,0}+\delta_\Lambda.
+\end{equation}
+The perturbation dynamics can be written in the standard complex-conjugate
+linear form
+\begin{equation}
+  \frac{\dd}{\dd T}
+  \begin{bmatrix}
+    \delta_H\\
+    \delta_\Lambda
+  \end{bmatrix}
+  =
+  \bm A
+  \begin{bmatrix}
+    \delta_H\\
+    \delta_\Lambda
+  \end{bmatrix}
+  +
+  \bm B
+  \begin{bmatrix}
+    \overline{\delta_H}\\
+    \overline{\delta_\Lambda}
+  \end{bmatrix}.
+\end{equation}
+For the undamped structural case,
+\begin{align}
+  \bm A
+  &=
+  -\begin{bmatrix}
+  \dfrac{1-\Omega_f^2}{2\jj\Omega_f}
+  &
+  -\dfrac{\Theta}{2}\\[6pt]
+  \dfrac{\Theta}{2}
+  &
+  \dfrac{\zeta}{2}
+  +\dfrac{\Omega_t^2-\Omega_f^2}{2\jj\Omega_f}
+  -\dfrac{3\jj}{4\Omega_f^3}
+  |\varphi_{\Lambda,0}|^2
+  \end{bmatrix},\\
+  \bm B
+  &=
+  -\begin{bmatrix}
+  0&0\\
+  0&-\dfrac{3\jj}{8\Omega_f^3}\varphi_{\Lambda,0}^2
+  \end{bmatrix}.
+\end{align}
+The branch is stable if all eigenvalues of
+\begin{equation}
+  \begin{bmatrix}
+    \bm A & \bm B\\
+    \overline{\bm B} & \overline{\bm A}
+  \end{bmatrix}
+\end{equation}
+have non-positive real part.  This is the stability check implemented in the
+ROM scripts when marking unstable portions of the hysteresis curve.
+
+\section{Power and Energy Accounting}
+
+The harvester output power is
+\begin{equation}
+  P_1(t)=\frac{v_1^2(t)}{R_1}
+  =
+  \frac{1}{R_1}\dot\lambda_1^2.
+\end{equation}
+In normalized variables, it is proportional to
+\begin{equation}
+  P_{1,\mathrm{norm}}=\zeta\left(\Lambda_1'\right)^2.
+\end{equation}
+
+The prescribed modulator path does work on the beam through
+\begin{equation}
+  P_2(t)=v_2(t)i_2(t),
+\end{equation}
+where
+\begin{equation}
+  i_2(t)=C_p\dot v_2(t)+\chi_{12}\dot\eta_1(t).
+\end{equation}
+The capacitive term is reversible charging energy.  The mechanically effective
+term is therefore
+\begin{equation}
+  P_{2,\mathrm{eff}}(t)=\chi_{12}v_2(t)\dot\eta_1(t).
+\end{equation}
+
+The January 31 slides and \texttt{simulations/rom/corrected\_fem\_mode\_rom.m}
+compare cumulative normalized harvested energy against modulation input.  This
+is the right diagnostic for judging whether the nonlinear branch transition is
+useful, rather than merely producing a larger response amplitude.
+
+\section{Relation to Simulation Results}
+
+\begin{itemize}
+  \item \textbf{Initial single-mode ROM.}  Hysteresis and branch selection under
+  harmonic base excitation and modulation were checked in the older analytic
+  mode scripts in \path{simulations/legacy_reference/}.
+  \item \textbf{Continuous beam FEM.}  The full beam model was used to test
+  whether the ROM-predicted branch transition appears beyond the single-mode
+  approximation.  See \path{simulations/fem/continuous_harvester.m}.
+  \item \textbf{Corrected mode assumption.}  The FEM-informed mode shape and
+  frequency replace the plain cantilever mode.  See
+  \path{simulations/fem/eigenanalysis_corrected_single_mode.m}.
+  \item \textbf{Corrected ROM.}  The main two-DOF model loads
+  \path{FEM_modes_norm.mat} and should be compared against FEM.  See
+  \path{simulations/rom/corrected_fem_mode_rom.m}.
+  \item \textbf{Power flow.}  Harvested energy versus modulation input is
+  discussed in the January 31 slides and implemented in the corrected ROM
+  scripts under \path{simulations/rom/}.
+  \item \textbf{Second-harmonic robustness.}  Nonlinear and linear comparisons
+  with a secondary base-excitation harmonic are archived under
+  \path{simulations/robustness/second_harmonics/}.
+\end{itemize}
+
+\section{Open Points for Collaborators}
+
+\begin{itemize}
+  \item The sign convention for $\chi_{11}$, $\chi_{12}$, and the FEM mode
+  orientation should be kept consistent.  The corrected MATLAB scripts use the
+  negative of the FEM mode quantities loaded from \texttt{FEM\_modes\_norm.mat}.
+  \item The current two-DOF ROM treats the modulator voltage as prescribed.  If
+  the modulator electronics are later modeled as a real circuit, it will add
+  additional electrical states.
+  \item The multi-mode Word note and \texttt{Old\_sources/Multi\_DOF/} are
+  useful future directions, but the present mainline result is still the
+  corrected single-mode ROM.
+  \item Brownian or rough stochastic base motion needs care because the FEM
+  boundary formulation uses prescribed acceleration.  This was already flagged
+  in the February 14 meeting.
+\end{itemize}
+
+\end{document}

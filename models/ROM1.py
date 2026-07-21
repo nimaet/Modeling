@@ -651,9 +651,10 @@ class ROM:
 		z = sol.y[2*N:2*N+S, :]
 		v = sol.y[2*N+S:2*N+2*S, :]
 		veloc = np.zeros((len(x_eval), eta_dot.shape[1]))
-
+		disp = np.zeros((len(x_eval), eta_dot.shape[1]))
 		for r in range(N):
 			veloc += np.outer(self.mode_shape(r, x_eval), eta_dot[r, :])
+			disp += np.outer(self.mode_shape(r, x_eval), eta[r, :])
 				# =========================
 		# Spectrum / FRF analysis
 		# =========================
@@ -695,6 +696,7 @@ class ROM:
 			'z': z,
 			'eta_dot': eta_dot,
 			'veloc': veloc,
+			'disp': disp,
 			'x_eval': x_eval,
 			'freq': freq,
 			'Y': Y,

@@ -10,31 +10,44 @@ import imageio.v2 as imageio
 from tqdm import trange
 
 def apply_dissertation_style():
-    import matplotlib.pyplot as plt
-    plt.rcParams.update({
-        "font.family": "serif",
-        "font.serif": "Times New Roman",
-        "font.size": 11,
-        "axes.titlesize": 13,
-        "axes.labelsize": 12,
-        "axes.titleweight": "bold",
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-        "legend.frameon": True,
-        "legend.framealpha": 0.9,
-        "lines.linewidth": 2.0,
-        "axes.grid": True,
-        "grid.alpha": 0.3,
-        "grid.linestyle": "--",
-        "figure.dpi": 300,
-        "savefig.dpi": 300,
-        "savefig.bbox": "tight",
-        "xtick.direction": "in",
-        "ytick.direction": "in",
-        "xtick.top": True,
-        "ytick.right": True,
-    })
+	import matplotlib.pyplot as plt
+	import matplotlib as mpl
+	SMALLER_SIZE = 7
+	SMALL_SIZE = 8
+	MEDIUM_SIZE = 9
+	BIGGER_SIZE = 10
+	plt.rcParams.update({
+		"font.family": "serif",
+		"text.usetex": False,
+		"font.serif": "Times New Roman",
+		"font.size": SMALLER_SIZE,
+		"axes.titlesize": MEDIUM_SIZE,
+		"axes.labelsize": MEDIUM_SIZE,
+		"axes.titleweight": "bold",
+		"xtick.labelsize": SMALL_SIZE,
+		"ytick.labelsize": SMALL_SIZE,
+		"legend.fontsize": SMALL_SIZE,
+		"legend.titlesize": MEDIUM_SIZE,
+		# "legend.frameon": True,
+		"mathtext.fontset": 'stix',
+		"axes.linewidth": 0.5,
+		"patch.linewidth": 0.5,
+		"legend.framealpha": 0.9,
+		"xtick.major.width": 0.5,
+		"ytick.major.width": 0.5,
+		# "lines.linewidth": 2.0,
+		# "axes.grid": True,
+		"grid.alpha": 0.3,
+		"grid.linestyle": "--",
+		"figure.dpi": 300,
+		"savefig.dpi": 300,
+		"savefig.bbox": "tight",
+		"xtick.direction": "in",
+		"ytick.direction": "in",
+		# "xtick.top": True,
+		# "ytick.right": True,
+	})
+	mpl.rcParams['text.latex.preamble'] = r'\usepackage{amsmath}'
 	
 def animate_field_1d(
 	t,

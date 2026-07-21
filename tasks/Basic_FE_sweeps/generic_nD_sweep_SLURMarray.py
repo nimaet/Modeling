@@ -89,7 +89,7 @@ class SweepSpec:
 # =========================================================
 # BASE MODEL PARAMETERS
 # =========================================================
-SAVE_PREFIX = "NES"
+SAVE_PREFIX = "Duffing_freq_sweep"
 sim_dat_dir = Path.cwd() / "sim_dat"
 sim_dat_dir.mkdir(parents=True, exist_ok=True)
 
@@ -123,10 +123,11 @@ def Kc_builder(kc):
 
 
 BASE_PARAMS = dict(
-	K_p=0.018,
-	K_i=0.001,
+	K_p=0.025,
+	K_i=1800,
 	K_c=3e10,
 	R_c=1e3,
+	amp = 50,
 )
 
 # =========================================================
@@ -134,34 +135,32 @@ BASE_PARAMS = dict(
 # =========================================================
 t_end = 1
 f0 = 500
-f1 = 3000
+f1 = 3500
 dt = 1 / max(f0, f1) / 50
 
 # =========================================================
 # DEFINE SWEEP
 # =========================================================
-amp_list = np.array([ 0.2, 0.4]) * 125
-kc_magnitudes = np.linspace(6e11, 3e12, 4)
+# amp_list = np.array([0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4 ]) * 125
+
+# Kc_magnitudes =  np.array([8.00e9, 1.20e10 1.50e10, 1.80e10, 2.50e10, 2.75e10, 3.00e10]) #for hardening
+# Kc_magnitudes =  -np.array([ 8.00e9, 1.0e10, 1.20e10, 1.30e10, 1.4e10, 1.6e10, 1.8e10, 2.0e10 ]) #for softening
+
+Kc_soft =  -np.array([5.0e8, 1.0e9, 2.0e9, 4.00e9 , 8.00e9, 1.0e10, 1.20e10, 1.30e10, 1.4e10, 1.6e10, 1.8e10, 2.0e10 ]) 
+Kc_hard =  np.array([5e8, 1e9, 2.0e9, 4.0e9, 8.00e9, 1.20e10, 1.50e10, 1.80e10, 2.50e10, 2.75e10, 3.00e10]) 
 
 sweep_spec = SweepSpec([
-	SweepParam(
-		key="amp",
-		values=amp_list.tolist(),
-		description="Excitation amplitude",
-	),
+	# SweepParam(
+	# 	key="amp",
+	# 	values=amp_list.tolist(),
+	# 	description="Excitation amplitude",
+	# ),
 
 	SweepParam(
 		key="K_c",
-		values=kc_magnitudes.tolist(),
+		values=Kc_soft.tolist()[::-1]+Kc_hard.tolist(),
 		target="K_c",
 		description="nonlinear inductance",
-	),
-
-	SweepParam(
-		key="K_p",
-		values=(np.linspace(0.01, 0.1, 12)).tolist(),
-		target="K_p",
-		description="linear inductance",
 	),
 ])
 
@@ -172,6 +171,8 @@ OUTPUT_SPEC = {
 	"t": lambda out: out["t"],
 	"u_dot": lambda out: out["u_dot"],
 	"v": lambda out: out["v"],
+	"FRF": lambda out: out['spectral']['FRF'],
+	"freq": lambda out: out['spectral']['freq'],
 }
 
 # =========================================================
@@ -246,6 +247,7 @@ def run_single_simulation(
 		)
 
 		data = {k: fn(out) for k, fn in output_spec.items()}
+		data['v_exc'] = v_exc(out['t'])
 
 		np.savez_compressed(
 			out_dir / f"sim_{index:05d}.npz",
