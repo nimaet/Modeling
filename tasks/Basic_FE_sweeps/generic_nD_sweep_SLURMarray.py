@@ -148,10 +148,10 @@ BASE_PARAMS = dict(
 # =========================================================
 # TIME / EXCITATION
 # =========================================================
-t_end = 1
+# t_end = 1
 f0 = 500
 f1 = 3500
-dt = 1 / max(f0, f1) / 50
+# dt = 1 / max(f0, f1) / 50
 
 # =========================================================
 # DEFINE SWEEP
@@ -171,24 +171,24 @@ sweep_spec = SweepSpec([
 	# 	description="Excitation amplitude",
 	# ),
 
-	SweepParam(
-		key="K_c",
-		values=Kc_soft.tolist()[::-1]+Kc_hard.tolist(),
-		target="K_c",
-		description="nonlinear inductance",
-	),
+	# SweepParam(
+	# 	key="K_c",
+	# 	values=Kc_soft.tolist()[::-1]+Kc_hard.tolist(),
+	# 	target="K_c",
+	# 	description="nonlinear inductance",
+	# ),
 
 	# Excitation frequency sweep (single-tone): one "freq" value is
 	# broadcast to both f0 and f1, so v_exc's chirp formula collapses
 	# to a constant-frequency sine at that value. When this param is
 	# absent, f0/f1 fall back to the module-level chirp (f0 -> f1
 	# over t_end), so the default sweep is unaffected.
-	# SweepParam(
-	# 	key="freq",
-	# 	values=np.linspace(1000, 3000, 11).tolist(),
-	# 	target=["f0", "f1"],
-	# 	description="Excitation frequency (single-tone)",
-	# ),
+	SweepParam(
+		key="freq",
+		values=np.linspace(1000, 3000, 500).tolist(),
+		target=["f0", "f1"],
+		description="Excitation frequency (single-tone)",
+	),
 ])
 
 # =========================================================
@@ -198,8 +198,8 @@ OUTPUT_SPEC = {
 	"t": lambda out: out["t"],
 	"u_dot": lambda out: out["u_dot"],
 	"v": lambda out: out["v"],
-	"FRF": lambda out: out['spectral']['FRF'],
-	"freq": lambda out: out['spectral']['freq'],
+	# "FRF": lambda out: out['spectral']['FRF'],
+	# "freq": lambda out: out['spectral']['freq'],
 }
 
 # =========================================================
@@ -239,7 +239,7 @@ def _max_swept_freq():
 	return max_freq
 
 
-dt = 1 / _max_swept_freq() / 50
+# dt = 1 / _max_swept_freq() / 50
 
 # =========================================================
 # SINGLE SIMULATION
@@ -249,7 +249,7 @@ def run_single_simulation(
 	sweep_entry,
 	base_params,
 	fe_params,
-	dt, t_end, f0, f1,
+	# dt, t_end, f0, f1,
 	output_spec,
 	out_dir
 ):
@@ -275,7 +275,8 @@ def run_single_simulation(
 			R_c=params["R_c"],
 			v_exc=v_exc
 		)
-
+		dt = 1 / max(f0_val, f1_val) / 50
+		t_end = 1/f0_val * 10000
 		out = FE_helpers.solve_newmark(
 			ode=ode,
 			dt=dt,
@@ -286,7 +287,7 @@ def run_single_simulation(
 			newton_maxiter=32,
 			x0=np.zeros(ode.M.shape[0]),
 			x_dot0=np.zeros(ode.M.shape[0]),
-			do_spectral=True
+			do_spectral=False
 		)
 
 		data = {k: fn(out) for k, fn in output_spec.items()}
@@ -354,7 +355,7 @@ if array_id == 0:
 
 	CONFIG = {
 		"created_at": datetime.now().isoformat(),
-		"time": dict(dt=dt, t_end=t_end, f0=f0, f1=f1),
+		"time": dict( f0=f0, f1=f1),
 		"sweep_spec": [
 			{
 				"key": p.key,
@@ -388,7 +389,7 @@ def run_and_store(index):
 		sweep_entry,
 		BASE_PARAMS,
 		params_fe,
-		dt, t_end, f0, f1,
+		# dt, t_end, f0, f1,
 		OUTPUT_SPEC,
 		local_dir
 	)

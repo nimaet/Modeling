@@ -3,10 +3,10 @@
 #SBATCH --account=gts-aerturk3
 #SBATCH -N 1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=4
-#SBATCH --mem=32G
-#SBATCH -t120
-#SBATCH --array=0-6
+#SBATCH --cpus-per-task=10
+#SBATCH --mem=80G
+#SBATCH -t50
+#SBATCH --array=0-49
 #SBATCH -q embers
 #SBATCH -o ./reports/Report-%A_%a.out
 
