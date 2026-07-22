@@ -196,8 +196,10 @@ sweep_spec = SweepSpec([
 # =========================================================
 OUTPUT_SPEC = {
 	"t": lambda out: out["t"],
+	"u": lambda out: out["u"],
 	"u_dot": lambda out: out["u_dot"],
 	"v": lambda out: out["v"],
+	"z": lambda out: out["z"],
 	# "FRF": lambda out: out['spectral']['FRF'],
 	# "freq": lambda out: out['spectral']['freq'],
 }

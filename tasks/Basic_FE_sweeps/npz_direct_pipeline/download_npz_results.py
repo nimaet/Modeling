@@ -18,7 +18,7 @@ import shlex
 
 REMOTE_USER = "setemadi3"
 REMOTE_HOST = "login-phoenix.pace.gatech.edu"
-dirnaeme = "Duffing_softening_10928098"
+dirnaeme = "Duffing_freq_sweep_11341114"
 REMOTE_DIR = (
 f"/storage/home/hcoda1/4/setemadi3/scratch/Modeling/tasks/Basic_FE_sweeps/sim_dat/{dirnaeme}/"
 )
@@ -26,7 +26,7 @@ f"/storage/home/hcoda1/4/setemadi3/scratch/Modeling/tasks/Basic_FE_sweeps/sim_da
 DEST_WSL = (
     "/mnt/e/GaTech Dropbox/Seyednima Etemadi/"
 	"Projects/Metamaterial beam/"
-	f"Modeling/tasks/FE_studies/sim_dat/{dirnaeme}"
+	f"Modeling/tasks/Basic_FE_sweeps/sim_dat/{dirnaeme}"
 )
 
 # Number of concurrent rsync streams for the npz transfer. Try 4-8; higher
@@ -34,7 +34,7 @@ DEST_WSL = (
 # by how many concurrent sessions the login node/SSH server will tolerate.
 # Must be between 1 and 10 (sims are sharded by the last digit of their
 # zero-padded index, sim_00000.npz .. sim_99999.npz).
-N_WORKERS = 6
+N_WORKERS = 8
 
 
 def digit_groups(n_workers):
